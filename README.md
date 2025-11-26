@@ -1,4 +1,4 @@
-# Lofi Streamer Dashboard
+# Lofi Streamer Dashboard ADD-ON
 
 A lightweight Flask dashboard for controlling and monitoring the `lofi-streamer` service on Raspberry Pi. The password-protected web UI provides start/stop/restart controls, shows recent journal logs, reports CPU temperature, checks whether the camera device is locked, and displays the currently playing track from `/tmp/current_track.txt`.
 
