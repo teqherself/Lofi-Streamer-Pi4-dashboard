@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lofi Streamer Dashboard v3.4</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="topbar">
+    <span>Lofi Streamer Dashboard v3.4</span>
+    <a class="logout" href="/logout">Logout</a>
+</div>
+
+<div class="grid">
+
+    <!-- STREAM INFO -->
+    <div class="tile">
+        <h3>Streamer Status</h3>
+        <div class="status {{ status }}">
+            {{ status | upper }}
+        </div>
+        <p><b>Now Playing:</b><br>{{ nowp }}</p>
+        <p><b>Camera Locked:</b> {{ camera }}</p>
+        <p><b>CPU Temperature:</b> {{ temp }}</p>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="tile">
+        <h3>Controls</h3>
+        <button onclick="location.href='/action/start'">Start Stream</button>
+        <button onclick="location.href='/action/stop'">Stop Stream</button>
+        <button onclick="location.href='/action/restart'">Restart Stream</button>
+
+        <hr>
+
+        <button class="warn" onclick="location.href='/action/reboot-confirm'">
+            System Reboot
+        </button>
+    </div>
+
+    <!-- LOG WINDOW -->
+    <div class="tile wide">
+        <h3>Streamer Logs (Last 40 lines)</h3>
+        <pre class="logbox">{{ logs }}</pre>
+    </div>
+
+</div>
+
+</body>
+</html>
