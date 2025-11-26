@@ -29,10 +29,25 @@ A lightweight Flask dashboard for controlling and monitoring the `lofi-streamer`
 ## Raspberry Pi installation (with the provided script)
 The `Install-Lofi-Streamer-Pi4-Dashboard.sh` script provisions dependencies, a Python virtual environment, sudoers rules, and systemd services for both the streamer and the dashboard.
 
-```bash
-chmod +x Install-Lofi-Streamer-Pi4-Dashboard.sh
-sudo ./Install-Lofi-Streamer-Pi4-Dashboard.sh
-```
+### Obtain and run the installer
+1. Download this repository onto your Raspberry Pi. Two common options:
+   - Clone it (replace `<REPO-URL>` with wherever you host this repo, for example `https://github.com/<org>/Lofi-Streamer-Pi4-dashboard.git`):
+     ```bash
+     git clone <REPO-URL>
+     cd Lofi-Streamer-Pi4-dashboard
+     ```
+   - Download an archive (if you prefer not to use git) and extract it, then `cd` into the folder that contains `Install-Lofi-Streamer-Pi4-Dashboard.sh`.
+2. Make the installer executable and launch it with sudo (it needs to create services and sudoers entries):
+   ```bash
+   chmod +x Install-Lofi-Streamer-Pi4-Dashboard.sh
+   sudo ./Install-Lofi-Streamer-Pi4-Dashboard.sh
+   ```
+3. When the script finishes it reports the dashboard URL (default `http://<pi-ip>:8181`). Use that address to sign in with the password that matches `PASSWORD_HASH` in `dashboard.py`. If you need to rerun or troubleshoot the services after installation:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now lofi-streamer.service lofi-dashboard.service
+   sudo systemctl status lofi-dashboard.service lofi-streamer.service
+   ```
 
 What the script does:
 - Detects the target user and creates `~/LofiStream` with subfolders for `Servers` and `Dashboard`
