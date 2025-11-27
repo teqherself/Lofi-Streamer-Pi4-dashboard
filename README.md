@@ -1,4 +1,13 @@
-# Lofi Streamer Dashboard Add-On
+🎛️ Lofi Streamer Dashboard Add-On
+GENDEMIK DIGITAL • Raspberry Pi 4 / 5 • Picamera2 Edition
+
+<a href="#"><img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi"></a>
+<a href="#"><img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"></a>
+<a href="#"><img src="https://img.shields.io/badge/Framework-Flask-green?style=for-the-badge&logo=flask"></a>
+<a href="#"><img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge"></a>
+
+This dashboard is an optional add-on for the Lofi Streamer.
+Install the streamer first, then install the dashboard to gain full control, monitoring, and system tools.
 
 Control and monitor your Raspberry Pi Lofi Streamer from a simple web dashboard. Install the main streamer first, then add this dashboard to get remote controls, live metrics, and quick troubleshooting tools.
 
