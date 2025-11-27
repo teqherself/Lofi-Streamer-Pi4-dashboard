@@ -1,70 +1,191 @@
-# Lofi Streamer Dashboard ADD-ON
+⭐ README.md — Lofi Streamer Dashboard (Add-On for Lofi Streamer)
+# 🎛️ Lofi Streamer Dashboard — Add-On for Lofi Streamer
+**GENDEMIK DIGITAL • Picamera2 Edition (Pi4 / Pi5)**  
+A standalone dashboard add-on that installs alongside your existing **Lofi Streamer** installation and provides real-time system status, streaming controls, camera monitoring, system metrics, and secure login.
 
-A lightweight Flask dashboard for controlling and monitoring the `lofi-streamer` service on Raspberry Pi. The password-protected web UI provides start/stop/restart controls, shows recent journal logs, reports CPU temperature, checks whether the camera device is locked, and displays the currently playing track from `/tmp/current_track.txt`.
+Designed specifically for the **Lofi Streamer**, running on a Raspberry Pi 4 or Pi 5.
 
-## Requirements
-- Python 3
-- Python packages: `flask`, `werkzeug`, `psutil`
-- System utilities: `systemctl`, `journalctl`, `lsof`, and `vcgencmd` (for Raspberry Pi CPU temperature)
-- A systemd-managed service named `lofi-streamer`
+---
 
-## Development quick start
-1. Create and activate a virtual environment:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. Install dependencies:
-   ```bash
-   pip install flask werkzeug psutil
-   ```
-3. Launch the dashboard locally:
-   ```bash
-   python dashboard.py
-   ```
-4. Open `http://localhost:4455` and log in using the password that matches `PASSWORD_HASH` in `dashboard.py`.
+## 🌟 Features
 
-> Service controls, log viewing, camera checks, and temperature readings rely on Raspberry Pi tooling and systemd. When running on other platforms those values may return `unknown` until the utilities are available.
+### 🎥 Streamer Control
+- Start / Stop / Restart the Lofi Streamer service  
+- Restart the camera subsystem independently  
+- See live service status  
+- Displays live “Now Playing” update from `/tmp/current_track.txt`
 
-## Raspberry Pi installation (with the provided script)
-The `Install-Lofi-Streamer-Pi4-Dashboard.sh` script provisions dependencies, a Python virtual environment, sudoers rules, and systemd services for both the streamer and the dashboard.
+### 📊 System Monitoring
+- CPU usage (%)  
+- RAM usage (%)  
+- CPU temperature  
+- Disk usage  
+- System uptime  
+- Stream uptime  
+- Service log tail: **last 40 log lines** auto-refreshing
 
-### Obtain and run the installer
-1. Download this repository onto your Raspberry Pi. Two common options:
-   - Clone it (replace `<REPO-URL>` with wherever you host this repo, for example `https://github.com/<org>/Lofi-Streamer-Pi4-dashboard.git`):
-     ```bash
-     git clone <REPO-URL>
-     cd Lofi-Streamer-Pi4-dashboard
-     ```
-   - Download an archive (if you prefer not to use git) and extract it, then `cd` into the folder that contains `Install-Lofi-Streamer-Pi4-Dashboard.sh`.
-2. Make the installer executable and launch it with sudo (it needs to create services and sudoers entries):
-   ```bash
-   chmod +x Install-Lofi-Streamer-Pi4-Dashboard.sh
-   sudo ./Install-Lofi-Streamer-Pi4-Dashboard.sh
-   ```
-3. When the script finishes it reports the dashboard URL (default `http://<pi-ip>:8181`). Use that address to sign in with the password that matches `PASSWORD_HASH` in `dashboard.py`. If you need to rerun or troubleshoot the services after installation:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now lofi-streamer.service lofi-dashboard.service
-   sudo systemctl status lofi-dashboard.service lofi-streamer.service
-   ```
+### 🔐 Secure Login
+- Password-protected dashboard  
+- Uses **Werkzeug SHA256 PBKDF2 hashed password**  
+- Customisable in dashboard.py
 
-What the script does:
-- Detects the target user and creates `~/LofiStream` with subfolders for `Servers` and `Dashboard`
-- Copies streamer and dashboard files into the new directory tree and makes `system_helper.sh` executable
-- Creates `~/LofiStream/stream_url.txt` (if missing) with a placeholder RTMP key
-- Sets up a virtual environment at `~/LofiStream/venv` and installs Python packages
-- Registers `lofi-streamer.service` and `lofi-dashboard.service` systemd units and enables them
-- Adds sudoers entries that allow the dashboard to run system commands without prompting for a password
+### 🖥️ Web Dashboard
+- Auto-refresh  
+- Clean minimal layout  
+- Fast on Pi4/Pi5  
+- Works at:  
+  **http://<your-pi-ip>:4455**
 
-When complete, the script prints the dashboard URL, which defaults to the host's IP on port `8181`. You can change the port by editing `app.run(..., port=4455)` in `dashboard.py` (and adjusting the installer output if desired).
+### 🧩 Standalone Add-On
+- Can be installed after the Lofi Streamer  
+- Does not modify streamer files  
+- Uses systemd for always-on service  
+- Fully user-agnostic (supports any Pi username)
 
-## Configuration
-- Update `ALLOWED_USER` and `PASSWORD_HASH` near the top of `dashboard.py` to set your credentials. The provided hash corresponds to the password `G1mp(())`.
-- The dashboard binds to `0.0.0.0` on port `4455` by default. Modify `app.run` for a different port.
-- Service names and log collection assume the systemd unit is called `lofi-streamer`. Adjust `STREAMER_SERVICE` in `dashboard.py` if your service name differs.
+---
 
-## Repository layout
-- `dashboard.py` — Flask application powering the dashboard UI
-- `index.html`, `login.html`, `reboot_confirm.html`, `style.css` — templates and styling
-- `Install-Lofi-Streamer-Pi4-Dashboard.sh` — installer for Raspberry Pi that configures services, virtualenv, and sudoers
+## 🧰 Requirements
+
+You **must install the Lofi Streamer first**:
+
+
+
+/home/<user>/LofiStream/
+
+
+Dashboard requires:
+- Raspberry Pi OS (Bookworm recommended)  
+- Python 3  
+- Flask  
+- psutil  
+- systemd (default on Pi OS)
+
+---
+
+# 🚀 Installation (One-Line Installer)
+
+Run this from ANY directory on your Raspberry Pi:
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/install.sh)
+
+
+This installer will:
+
+Detect your Pi username
+
+Verify your Lofi Streamer install
+
+Install Flask + psutil
+
+Create /home/<user>/LofiStream/Dashboard/
+
+Download dashboard.py, templates, CSS, helpers
+
+Create the dashboard systemd service
+
+Install sudoers permissions safely
+
+Start the dashboard automatically
+
+When complete, your dashboard is available at:
+
+http://<pi-ip>:4455
+
+
+To check your Pi’s IP:
+
+hostname -I
+
+📂 Folder Structure Installed
+LofiStream/
+ ├── Servers/
+ │    └── lofi-streamer.py
+ ├── Dashboard/
+ │    ├── dashboard.py
+ │    ├── system_helper.sh
+ │    ├── static/
+ │    │    └── style.css
+ │    └── templates/
+ │         ├── index.html
+ │         └── login.html
+ └── stream_url.txt
+
+🔧 Managing the Dashboard Service
+Restart dashboard
+sudo systemctl restart lofi-dashboard
+
+Check status
+sudo systemctl status lofi-dashboard
+
+View dashboard logs
+journalctl -u lofi-dashboard -n 40 --no-pager
+
+🔧 Managing the Streamer Service (from terminal)
+Start
+sudo systemctl start lofi-streamer
+
+Stop
+sudo systemctl stop lofi-streamer
+
+Restart
+sudo systemctl restart lofi-streamer
+
+Logs
+sudo journalctl -u lofi-streamer -n 40 --no-pager
+
+🐛 Troubleshooting
+❗ Dashboard shows “Streamer not running”
+
+Verify the streamer service exists:
+
+sudo systemctl status lofi-streamer
+
+
+If missing, reinstall the streamer.
+
+❗ Dashboard not loading at http://<ip>:4455
+
+Check service:
+
+sudo systemctl status lofi-dashboard
+
+
+Restart:
+
+sudo systemctl restart lofi-dashboard
+
+❗ Login does not work
+
+Check the hashed password inside:
+
+/home/<user>/LofiStream/Dashboard/dashboard.py
+
+❗ Buttons do nothing
+
+Ensure sudoers file exists:
+
+cat /etc/sudoers.d/lofi-dashboard
+
+❌ Uninstall
+
+Remove dashboard folder:
+
+rm -rf ~/LofiStream/Dashboard
+
+
+Remove systemd service:
+
+sudo rm /etc/systemd/system/lofi-dashboard.service
+sudo systemctl daemon-reload
+
+
+Remove sudoers file:
+
+sudo rm /etc/sudoers.d/lofi-dashboard
+
+📦 Version
+
+Dashboard v3.4 — GENDEMIK DIGITAL
+Add-On for Lofi Streamer
+Maintained by Ms Stevie Woo (teqherself)
