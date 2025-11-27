@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lofi Dashboard Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>Lofi Streamer Dashboard</h1>
+    <p class="login-sub">GENDEMIK DIGITAL · Secure Access</p>
+
+    {% if error %}
+      <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autofocus required>
+
+      <button type="submit" class="btn btn-primary btn-full">Login</button>
+    </form>
+  </div>
+</body>
+</html>
