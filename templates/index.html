@@ -1,110 +1,65 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Lofi Streamer Dashboard v3.5</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <!-- Simple auto-refresh so logs / stats stay fresh -->
-  <meta http-equiv="refresh" content="10">
+    <title>Lofi Streamer Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="dash-body">
-  <div class="page-wrapper">
-    <header class="top-bar">
-      <div>
-        <h1 class="app-title">Lofi Streamer Dashboard</h1>
-        <p class="app-subtitle">
-          GENDEMIK DIGITAL · Host: {{ hostname }} · Updated: {{ now }}
-        </p>
-      </div>
-      <form action="{{ url_for('logout') }}" method="post">
-        <button type="submit" class="btn small-btn danger-btn">Logout</button>
-      </form>
-    </header>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="flash-container">
-          {% for category, message in messages %}
-            <div class="flash flash-{{ category }}">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+<body>
 
-    <!-- 2x2 Tiles -->
-    <section class="tile-grid">
-      <!-- System Tile -->
-      <article class="tile">
-        <h2>System</h2>
-        <ul class="metric-list">
-          <li><span>CPU</span><strong>{{ system.cpu }}</strong></li>
-          <li><span>Memory</span><strong>{{ system.memory }}</strong></li>
-          <li><span>Disk</span><strong>{{ system.disk }}</strong></li>
-          <li><span>Temp</span><strong>{{ system.temp }}</strong></li>
-          <li><span>Uptime</span><strong>{{ system.uptime }}</strong></li>
-        </ul>
-      </article>
+<h1>Lofi Streamer Dashboard</h1>
 
-      <!-- Streamer Tile -->
-      <article class="tile">
-        <h2>Streamer</h2>
-        <ul class="metric-list">
-          <li><span>Status</span><strong>{{ streamer.status }}</strong></li>
-          <li><span>Enabled</span><strong>{{ streamer.enabled }}</strong></li>
-          <li><span>Now Playing</span><strong>{{ current_track }}</strong></li>
-        </ul>
-      </article>
+<div class="grid">
+    <div class="tile">
+        <h2>Streamer Status</h2>
+        <p>Status: <strong>{{ status }}</strong></p>
+        <p>Uptime: {{ uptime }}</p>
+        <p>Now Playing: {{ track }}</p>
+    </div>
 
-      <!-- Controls Tile -->
-      <article class="tile">
+    <div class="tile">
         <h2>Controls</h2>
-        <form method="post" action="{{ url_for('action') }}" class="controls-form">
-          <div class="controls-row">
-            <button name="action" value="start_streamer" class="btn primary-btn">Start</button>
-            <button name="action" value="stop_streamer" class="btn warn-btn">Stop</button>
-            <button name="action" value="restart_streamer" class="btn primary-btn">Restart</button>
-          </div>
-          <div class="controls-row">
-            <button name="action" value="camera_restart" class="btn secondary-btn">
-              Restart Camera Only
-            </button>
-          </div>
-          <div class="controls-row">
-            <!-- Two-step reboot: user must click & confirm in browser -->
-            <button
-              type="button"
-              class="btn danger-btn"
-              onclick="if (confirm('Reboot the Pi now?')) { this.form.action.value='reboot'; this.form.submit(); }"
-            >
-              System Reboot
-            </button>
-            <input type="hidden" name="action" value="">
-          </div>
-        </form>
-      </article>
+        <a class="btn" href="/action/start">Start</a>
+        <a class="btn" href="/action/stop">Stop</a>
+        <a class="btn" href="/action/restart">Restart</a>
+        <a class="btn warn" href="/action/camrestart">Restart Camera</a>
+        <a class="btn logout" href="/logout">Logout</a>
+        <a class="btn reboot" href="/action/reboot">Reboot</a>
+    </div>
 
-      <!-- Spare Tile (keeps 2x2 layout) -->
-      <article class="tile">
-        <h2>Spare</h2>
-        <p>Reserved space for future widgets (e.g., network stats, disk IO, etc.).</p>
-      </article>
-    </section>
+    <div class="tile">
+        <h2>System</h2>
+        <p>CPU: {{ cpu }}%</p>
+        <p>RAM: {{ ram }}%</p>
+        <p>Disk: {{ disk }}%</p>
+        <p>Temp: {{ temp }}°C</p>
+    </div>
 
-    <!-- Logs underneath as 3 columns -->
-    <section class="logs-section">
-      <div class="log-column">
-        <h3>Streamer Log (last 40)</h3>
-        <pre class="log-box">{{ streamer_log }}</pre>
-      </div>
-      <div class="log-column">
-        <h3>Camera Log (filtered, last 40)</h3>
-        <pre class="log-box">{{ camera_log }}</pre>
-      </div>
-      <div class="log-column">
-        <h3>Dashboard Log (last 40)</h3>
-        <pre class="log-box">{{ dash_log }}</pre>
-      </div>
-    </section>
-  </div>
+    <div class="tile">
+        <h2>Info</h2>
+        <p>Streamer version: v9.x</p>
+        <p>Dashboard version: v3.5.1</p>
+    </div>
+</div>
+
+<h2>Logs</h2>
+
+<div class="logs">
+    <div class="log-pane">
+        <h3>Streamer Logs</h3>
+        <pre>{{ streamer_logs }}</pre>
+    </div>
+
+    <div class="log-pane">
+        <h3>Camera Logs</h3>
+        <pre>{{ camera_logs }}</pre>
+    </div>
+
+    <div class="log-pane">
+        <h3>Dashboard Logs</h3>
+        <pre>{{ dashboard_logs }}</pre>
+    </div>
+</div>
+
 </body>
 </html>
