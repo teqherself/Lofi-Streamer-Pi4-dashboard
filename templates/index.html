@@ -1,65 +1,237 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Lofi Streamer Dashboard</title>
+    <meta charset="UTF-8">
+    <title>Lofi Streamer Dashboard v3.5</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
-<body>
-
-<h1>Lofi Streamer Dashboard</h1>
-
-<div class="grid">
-    <div class="tile">
-        <h2>Streamer Status</h2>
-        <p>Status: <strong>{{ status }}</strong></p>
-        <p>Uptime: {{ uptime }}</p>
-        <p>Now Playing: {{ track }}</p>
+<body class="dash-body">
+<header class="dash-header">
+    <div class="brand">
+        <span class="brand-main">GENDEMIK DIGITAL</span>
+        <span class="brand-sub">Lofi Streamer Dashboard v3.5</span>
     </div>
-
-    <div class="tile">
-        <h2>Controls</h2>
-        <a class="btn" href="/action/start">Start</a>
-        <a class="btn" href="/action/stop">Stop</a>
-        <a class="btn" href="/action/restart">Restart</a>
-        <a class="btn warn" href="/action/camrestart">Restart Camera</a>
-        <a class="btn logout" href="/logout">Logout</a>
-        <a class="btn reboot" href="/action/reboot">Reboot</a>
+    <div class="header-right">
+        <button class="btn-ghost" onclick="logout()">Logout</button>
     </div>
+</header>
 
-    <div class="tile">
-        <h2>System</h2>
-        <p>CPU: {{ cpu }}%</p>
-        <p>RAM: {{ ram }}%</p>
-        <p>Disk: {{ disk }}%</p>
-        <p>Temp: {{ temp }}°C</p>
-    </div>
+<main class="dash-main">
 
-    <div class="tile">
-        <h2>Info</h2>
-        <p>Streamer version: v9.x</p>
-        <p>Dashboard version: v3.5.1</p>
-    </div>
-</div>
+    <!-- GRID: 2x2 tiles -->
+    <section class="tiles-grid">
+        <!-- Controls tile (wide) -->
+        <div class="tile tile-controls">
+            <h2>Streamer Controls</h2>
+            <div class="controls-row">
+                <button class="btn-primary" onclick="controlStreamer('start')">Start Streamer</button>
+                <button class="btn-warn" onclick="controlStreamer('stop')">Stop Streamer</button>
+                <button class="btn-secondary" onclick="controlStreamer('restart')">Restart Streamer</button>
+            </div>
 
-<h2>Logs</h2>
+            <div class="controls-row">
+                <button class="btn-secondary" onclick="cameraRestart()">Restart Camera</button>
+                <button class="btn-danger" onclick="confirmReboot()">System Reboot</button>
+            </div>
 
-<div class="logs">
-    <div class="log-pane">
-        <h3>Streamer Logs</h3>
-        <pre>{{ streamer_logs }}</pre>
-    </div>
+            <div id="control-status" class="control-status"></div>
+        </div>
 
-    <div class="log-pane">
-        <h3>Camera Logs</h3>
-        <pre>{{ camera_logs }}</pre>
-    </div>
+        <!-- System info tile -->
+        <div class="tile">
+            <h2>System Info</h2>
+            <div class="sys-row">
+                <span>Hostname</span><span id="sys-hostname">–</span>
+            </div>
+            <div class="sys-row">
+                <span>CPU</span><span id="sys-cpu">–</span>
+            </div>
+            <div class="sys-row">
+                <span>RAM</span><span id="sys-mem">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Disk</span><span id="sys-disk">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Temp</span><span id="sys-temp">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Uptime</span><span id="sys-uptime">–</span>
+            </div>
+        </div>
 
-    <div class="log-pane">
-        <h3>Dashboard Logs</h3>
-        <pre>{{ dashboard_logs }}</pre>
-    </div>
-</div>
+        <!-- Streamer status tile -->
+        <div class="tile">
+            <h2>Streamer Status</h2>
+            <div class="sys-row">
+                <span>Service</span><span id="streamer-active">–</span>
+            </div>
+            <div class="sys-row">
+                <span>State</span><span id="streamer-state">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Substate</span><span id="streamer-substate">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Since</span><span id="streamer-since">–</span>
+            </div>
+            <div class="sys-row">
+                <span>Now Playing</span><span id="streamer-nowplaying">–</span>
+            </div>
+        </div>
 
+        <!-- Blank tile for layout -->
+        <div class="tile tile-blank">
+            <h2>Reserved</h2>
+            <p>Space for future tools (YouTube, presets, etc.).</p>
+        </div>
+    </section>
+
+    <!-- LOG ROW: 3 columns -->
+    <section class="logs-grid">
+        <div class="log-column">
+            <div class="log-header">
+                <h3>Streamer Log</h3>
+                <span>journalctl -u lofi-streamer -n 40</span>
+            </div>
+            <pre id="log-streamer" class="log-box">(loading…)</pre>
+        </div>
+
+        <div class="log-column">
+            <div class="log-header">
+                <h3>Camera Log</h3>
+                <span>filtered from lofi-streamer journal</span>
+            </div>
+            <pre id="log-camera" class="log-box">(loading…)</pre>
+        </div>
+
+        <div class="log-column">
+            <div class="log-header">
+                <h3>Dashboard Log</h3>
+                <span>journalctl -u lofi-dashboard -n 40</span>
+            </div>
+            <pre id="log-dashboard" class="log-box">(loading…)</pre>
+        </div>
+    </section>
+</main>
+
+<script>
+function logout() {
+    window.location = "{{ url_for('logout') }}";
+}
+
+async function fetchJSON(url, options) {
+    try {
+        const res = await fetch(url, options || {});
+        if (!res.ok) throw new Error(await res.text());
+        return await res.json();
+    } catch (err) {
+        console.error("Fetch error:", err);
+        return null;
+    }
+}
+
+async function refreshSystem() {
+    const data = await fetchJSON("{{ url_for('api_system') }}");
+    if (!data) return;
+    document.getElementById("sys-hostname").textContent = data.hostname || "–";
+    document.getElementById("sys-cpu").textContent = (data.cpu ?? 0) + " %";
+    document.getElementById("sys-mem").textContent = (data.mem ?? 0) + " %";
+    document.getElementById("sys-disk").textContent = (data.disk ?? 0) + " %";
+    document.getElementById("sys-temp").textContent = data.temp !== null && data.temp !== undefined ? data.temp + " °C" : "–";
+    document.getElementById("sys-uptime").textContent = data.uptime || "–";
+}
+
+async function refreshStreamer() {
+    const data = await fetchJSON("{{ url_for('api_streamer') }}");
+    if (!data) return;
+    document.getElementById("streamer-active").textContent = data.active ? "ACTIVE" : "INACTIVE";
+    document.getElementById("streamer-state").textContent = data.active_state || "–";
+    document.getElementById("streamer-substate").textContent = data.sub_state || "–";
+    document.getElementById("streamer-since").textContent = data.since || "–";
+    document.getElementById("streamer-nowplaying").textContent = data.now_playing || "–";
+}
+
+async function refreshLogs() {
+    const s = await fetchJSON("{{ url_for('api_logs_streamer') }}");
+    if (s && s.log !== undefined) {
+        document.getElementById("log-streamer").textContent = s.log || "(no data)";
+    }
+
+    const c = await fetchJSON("{{ url_for('api_logs_camera') }}");
+    if (c && c.log !== undefined) {
+        document.getElementById("log-camera").textContent = c.log || "(no data)";
+    }
+
+    const d = await fetchJSON("{{ url_for('api_logs_dashboard') }}");
+    if (d && d.log !== undefined) {
+        document.getElementById("log-dashboard").textContent = d.log || "(no data)";
+    }
+}
+
+async function controlStreamer(action) {
+    const box = document.getElementById("control-status");
+    box.textContent = "Working…";
+
+    const res = await fetchJSON("{{ url_for('control_streamer') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action})
+    });
+
+    if (!res) {
+        box.textContent = "Error talking to server.";
+        return;
+    }
+
+    box.textContent = res.ok ? "OK: " + (res.output || "") : "Error: " + (res.output || "unknown");
+    refreshStreamer();
+    refreshLogs();
+}
+
+async function cameraRestart() {
+    const box = document.getElementById("control-status");
+    box.textContent = "Restarting camera…";
+    const res = await fetchJSON("{{ url_for('control_camera') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"}
+    });
+    if (!res) {
+        box.textContent = "Error talking to server.";
+        return;
+    }
+    box.textContent = res.ok ? "Camera restart requested." : "Error: " + (res.output || "unknown");
+    refreshLogs();
+}
+
+async function confirmReboot() {
+    const box = document.getElementById("control-status");
+    if (!confirm("Are you sure you want to reboot the Pi?")) {
+        box.textContent = "Reboot cancelled.";
+        return;
+    }
+    box.textContent = "Rebooting…";
+    const res = await fetchJSON("{{ url_for('control_reboot') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"}
+    });
+    // System will go away shortly if reboot succeeds
+    if (res && res.ok) {
+        box.textContent = "Reboot command sent.";
+    } else {
+        box.textContent = "Reboot failed: " + (res && res.output ? res.output : "unknown");
+    }
+}
+
+// Initial refresh
+refreshSystem();
+refreshStreamer();
+refreshLogs();
+
+// Poll every 5 seconds
+setInterval(refreshSystem, 5000);
+setInterval(refreshStreamer, 5000);
+setInterval(refreshLogs, 5000);
+</script>
 </body>
 </html>
