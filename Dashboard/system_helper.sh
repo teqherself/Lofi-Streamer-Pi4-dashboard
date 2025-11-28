@@ -14,7 +14,7 @@ case "$ACTION" in
     echo "Clearing camera locks (ffmpeg/libcamera/picamera2)..."
 
     # Kill any processes using camera device nodes
-    PIDS=$(lsof /dev/media* /dev/video* /dev/v4l-subdev* 2>/dev/null | awk 'NR>1 {print $2}')
+    PIDS=$(lsof /dev/media* /dev/video* /dev/v4l-subdev* 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
 
     if [ -n "$PIDS" ]; then
       echo "Killing PIDs: $PIDS"
