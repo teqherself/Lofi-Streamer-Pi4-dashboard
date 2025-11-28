@@ -1,88 +1,326 @@
+:root {
+    --bg: #05060a;
+    --bg-alt: #0c0f18;
+    --tile: #151a26;
+    --tile-border: #222838;
+    --accent: #ff6ac1;
+    --accent-soft: #ff99d6;
+    --danger: #ff4b4b;
+    --warn: #f6c453;
+    --text: #f5f5f7;
+    --muted: #9ca3af;
+    --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* General */
+
 body {
-    background: #0d0d0d;
-    color: #eee;
-    font-family: Arial, sans-serif;
-    margin: 20px;
+    margin: 0;
+    font-family: var(--font-main);
+    background: radial-gradient(circle at top, #141824 0, #05060a 55%);
+    color: var(--text);
 }
 
-h1 {
-    text-align: center;
-    margin-bottom: 25px;
+/* Header */
+
+.dash-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px;
+    background: rgba(5, 6, 10, 0.95);
+    border-bottom: 1px solid #1f2933;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
-.grid {
+.brand-main {
+    display: block;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+}
+
+.brand-sub {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.header-right {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Layout */
+
+.dash-main {
+    padding: 16px 20px 40px;
+    max-width: 1280px;
+    margin: 0 auto;
+}
+
+/* Tiles (2x2 grid) */
+
+.tiles-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 20px;
+    grid-template-columns: 2fr 1.2fr;
+    grid-template-rows: auto auto;
+    gap: 16px;
+    margin-bottom: 20px;
 }
 
 .tile {
-    background: #1a1a1a;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 0 10px #000;
+    background: radial-gradient(circle at top left, #20263a 0, #141824 40%, #0b0f18 100%);
+    border-radius: 16px;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--tile-border);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
 }
 
-.btn {
-    display: inline-block;
-    margin: 5px 0;
-    padding: 8px 14px;
-    background: #444;
-    color: white;
-    text-decoration: none;
+.tile h2 {
+    margin: 0 0 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+}
+
+/* Controls tile spans full width top-left cell only in its column
+   Layout is already 2 cols; we just keep this slightly more 'control-like' */
+.tile-controls .controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.tile-blank {
+    opacity: 0.7;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+/* System rows */
+
+.sys-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    padding: 3px 0;
+}
+
+.sys-row span:first-child {
+    color: var(--muted);
+}
+
+.sys-row span:last-child {
+    font-weight: 500;
+}
+
+/* Control status */
+
+.control-status {
+    margin-top: 6px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    min-height: 1.2em;
+}
+
+/* Logs grid */
+
+.logs-grid {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.log-column {
+    background: linear-gradient(135deg, #131722 0, #0c0f18 60%);
+    border-radius: 12px;
+    border: 1px solid #202638;
+    padding: 10px 10px 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+.log-header {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 6px;
+}
+
+.log-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
+}
+
+.log-header span {
+    font-size: 0.7rem;
+    color: var(--muted);
+}
+
+.log-box {
+    background: #05060a;
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 0.68rem;
+    color: #e5e7eb;
+    max-height: 280px;
+    overflow: auto;
+    border: 1px solid #1f2933;
+}
+
+/* Scrollbar styling */
+
+.log-box::-webkit-scrollbar {
+    width: 6px;
+}
+
+.log-box::-webkit-scrollbar-track {
+    background: #05060a;
+}
+
+.log-box::-webkit-scrollbar-thumb {
+    background: #384152;
     border-radius: 6px;
 }
 
-.btn:hover {
-    background: #666;
+/* Buttons */
+
+button {
+    font-family: inherit;
+    border-radius: 999px;
+    border: none;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    outline: none;
+    transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.1s ease;
 }
 
-.warn { background: #b8860b; }
-.logout { background: #555; }
-.reboot { background: #8b0000; }
-
-.logs {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 25px;
-    gap: 15px;
+button:active {
+    transform: translateY(1px) scale(0.99);
 }
 
-.log-pane {
-    width: 33%;
-    background: #111;
-    padding: 15px;
-    border-radius: 10px;
+.btn-primary {
+    background: var(--accent);
+    color: #05060a;
+    box-shadow: 0 6px 16px rgba(255, 106, 193, 0.35);
 }
 
-pre {
-    white-space: pre-wrap;
-    font-size: 12px;
-    color: #ccc;
+.btn-primary:hover {
+    background: #ff87cf;
 }
+
+.btn-secondary {
+    background: #1f2933;
+    color: var(--text);
+}
+
+.btn-warn {
+    background: var(--warn);
+    color: #05060a;
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: #05060a;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid #3b4254;
+}
+
+/* Login page */
 
 .login-body {
-    background: #000;
+    background: radial-gradient(circle at top, #141824 0, #05060a 55%);
     display: flex;
-    justify-content: center;
     align-items: center;
-    height: 100vh;
+    justify-content: center;
+    min-height: 100vh;
 }
 
-.login-box {
-    background: #1a1a1a;
-    padding: 40px;
-    border-radius: 10px;
+.login-container {
+    background: #0b0f18;
+    border-radius: 18px;
+    border: 1px solid #1f2933;
+    padding: 22px 24px 24px;
+    max-width: 360px;
+    width: 100%;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+}
+
+.app-title {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-soft);
     text-align: center;
 }
 
-input {
-    width: 100%;
-    padding: 10px;
-    margin-top: 10px;
+.app-subtitle {
+    margin: 0 0 16px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: center;
 }
 
-button {
-    padding: 10px 25px;
-    margin-top: 10px;
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.login-form label {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.login-form input {
+    border-radius: 999px;
+    border: 1px solid #374151;
+    background: #05060a;
+    padding: 6px 10px;
+    color: var(--text);
+    font-size: 0.85rem;
+}
+
+.login-form input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.error-box {
+    background: rgba(255, 75, 75, 0.1);
+    border: 1px solid rgba(255, 75, 75, 0.5);
+    color: #fecaca;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+/* Responsive */
+
+@media (max-width: 960px) {
+    .tiles-grid {
+        grid-template-columns: 1fr;
+    }
+    .logs-grid {
+        grid-template-columns: 1fr;
+    }
 }
