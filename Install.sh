@@ -1,121 +1,128 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# Lofi Streamer Dashboard Add-On Installer (v3.5.1)
+# GENDEMIK DIGITAL – installs the dashboard as an add-on to an existing LofiStream
+
 set -e
 
-echo "==============================================="
-echo "   Lofi Streamer Dashboard — Add-On Installer"
-echo "==============================================="
-
-# --- Detect user --------------------------------------------------
-REAL_USER="${SUDO_USER:-$USER}"
-USER_HOME=$(eval echo "~$REAL_USER")
-LOFISTREAM_DIR="$USER_HOME/LofiStream"
-DASH_DIR="$LOFISTREAM_DIR/Dashboard"
-RAW_BASE="https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main"
-
-echo "→ Installing for user: $REAL_USER"
-echo "→ Home: $USER_HOME"
-echo "→ Stream root: $LOFISTREAM_DIR"
-echo "→ Dashboard dir: $DASH_DIR"
+echo "🎛️ Lofi Streamer Dashboard Add-On Installer"
+echo "GENDEMIK DIGITAL – Raspberry Pi 4/5"
 echo
 
-# --- Verify streamer install --------------------------------------
-if [ ! -d "$LOFISTREAM_DIR" ]; then
-    echo "❌ ERROR: LofiStream not found at:"
-    echo "   $LOFISTREAM_DIR"
-    echo "Install lofi-streamer *before* running this add-on."
-    exit 1
+# ---------- Detect user / paths ----------
+if [ "$SUDO_USER" ]; then
+  USER_NAME="$SUDO_USER"
+else
+  USER_NAME="$(logname 2>/dev/null || echo "$USER")"
 fi
 
-if [ ! -f "$LOFISTREAM_DIR/Servers/lofi-streamer.py" ]; then
-    echo "❌ ERROR: Streamer file missing. Not a valid install."
-    exit 1
+HOME_DIR=$(eval echo "~$USER_NAME")
+BASE_DIR="$HOME_DIR/LofiStream"
+DASH_DIR="$BASE_DIR/Dashboard"
+
+echo "➕ Installing for user: $USER_NAME"
+echo "📁 HOME:  $HOME_DIR"
+echo "📁 BASE:  $BASE_DIR"
+echo "📁 DASH:  $DASH_DIR"
+echo
+
+if [ ! -d "$BASE_DIR" ]; then
+  echo "❌ LofiStream base folder not found: $BASE_DIR"
+  echo "   Please install the main Lofi Streamer first, then run this installer again."
+  exit 1
 fi
 
-# --- Install dependencies -----------------------------------------
-echo "📦 Installing dependencies…"
+# ---------- Install dependencies ----------
+echo "📦 Installing dashboard dependencies (Flask, psutil)…"
 sudo apt update -y
-sudo apt install -y python3-flask python3-psutil curl lsof
+sudo apt install -y python3-flask python3-psutil
 
-# --- Create Dashboard layout --------------------------------------
-echo "📁 Creating Dashboard directory…"
-mkdir -p "$DASH_DIR/static"
-mkdir -p "$DASH_DIR/templates"
+# ---------- Create dashboard structure ----------
+echo "📁 Creating dashboard folders…"
+mkdir -p "$DASH_DIR/templates" "$DASH_DIR/static"
 
-# --- Download Python app ------------------------------------------
-echo "⬇ Downloading dashboard.py…"
-curl -fsSL "$RAW_BASE/dashboard.py" -o "$DASH_DIR/dashboard.py"
+RAW_BASE="https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/Dashboard"
 
-# --- Download system helper ---------------------------------------
-echo "⬇ Downloading system_helper.sh…"
-curl -fsSL "$RAW_BASE/system_helper.sh" -o "$DASH_DIR/system_helper.sh"
-chmod +x "$DASH_DIR/system_helper.sh"
+echo "🌐 Fetching dashboard files from GitHub…"
+# Core scripts
+wget -qO "$DASH_DIR/dashboard.py"     "$RAW_BASE/dashboard.py"
+wget -qO "$DASH_DIR/system_helper.sh" "$RAW_BASE/system_helper.sh"
 
-# --- Download Templates -------------------------------------------
-echo "⬇ Downloading templates…"
-curl -fsSL "$RAW_BASE/templates/index.html" -o "$DASH_DIR/templates/index.html"
-curl -fsSL "$RAW_BASE/templates/login.html" -o "$DASH_DIR/templates/login.html"
+# Templates
+wget -qO "$DASH_DIR/templates/index.html" "$RAW_BASE/templates/index.html"
+wget -qO "$DASH_DIR/templates/login.html" "$RAW_BASE/templates/login.html"
 
-# --- Download CSS -------------------------------------------------
-echo "⬇ Downloading CSS…"
-curl -fsSL "$RAW_BASE/static/style.css" -o "$DASH_DIR/static/style.css"
+# Static
+wget -qO "$DASH_DIR/static/style.css"     "$RAW_BASE/static/style.css"
 
-# --- Create Systemd service --------------------------------------
+chmod +x "$DASH_DIR/dashboard.py" "$DASH_DIR/system_helper.sh"
+
+echo "✅ Dashboard files installed."
+
+# ---------- systemd service ----------
 SERVICE_FILE="/etc/systemd/system/lofi-dashboard.service"
 
-echo "🛠 Creating systemd service…"
+echo "🧾 Writing systemd service: $SERVICE_FILE"
 
-sudo bash -c "cat > $SERVICE_FILE" <<EOF
+sudo bash -c "cat > '$SERVICE_FILE' <<EOF
 [Unit]
-Description=Lofi Streamer Dashboard
+Description=Lofi Streamer Dashboard (GENDEMIK DIGITAL)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
+User=$USER_NAME
 WorkingDirectory=$DASH_DIR
 ExecStart=/usr/bin/python3 $DASH_DIR/dashboard.py
-User=$REAL_USER
 Restart=always
+RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 EOF
+"
 
-# --- Reload + enable ---------------------------------------------
-echo "🔄 Reloading systemd…"
-sudo systemctl daemon-reload
-
-echo "🚀 Enabling and starting dashboard…"
-sudo systemctl enable lofi-dashboard
-sudo systemctl restart lofi-dashboard
-
-# --- Safe sudoers installation ------------------------------------
+# ---------- sudoers for dashboard controls ----------
 SUDOERS_FILE="/etc/sudoers.d/lofi-dashboard"
+DASH_HELPER="$DASH_DIR/system_helper.sh"
 
-echo "🛡 Installing sudoers rules…"
+echo "🧾 Writing sudoers snippet: $SUDOERS_FILE"
 
-sudo bash -c "cat > $SUDOERS_FILE" <<EOF
-$REAL_USER ALL=NOPASSWD: $DASH_DIR/system_helper.sh
-$REAL_USER ALL=NOPASSWD: /usr/bin/systemctl start lofi-streamer
-$REAL_USER ALL=NOPASSWD: /usr/bin/systemctl stop lofi-streamer
-$REAL_USER ALL=NOPASSWD: /usr/bin/systemctl restart lofi-streamer
-$REAL_USER ALL=NOPASSWD: /usr/bin/systemctl status lofi-streamer
-$REAL_USER ALL=NOPASSWD: /usr/bin/journalctl -u lofi-streamer -n 40 --no-pager
-$REAL_USER ALL=NOPASSWD: /usr/bin/pkill
-$REAL_USER ALL=NOPASSWD: /usr/bin/lsof
-$REAL_USER ALL=NOPASSWD: /usr/bin/vcgencmd
-$REAL_USER ALL=NOPASSWD: /usr/sbin/reboot
+sudo bash -c "cat > '$SUDOERS_FILE' <<EOF
+# Auto-generated by Lofi Streamer Dashboard installer
+# User: $USER_NAME
+
+$USER_NAME ALL=NOPASSWD: /usr/bin/systemctl start lofi-streamer
+$USER_NAME ALL=NOPASSWD: /usr/bin/systemctl stop lofi-streamer
+$USER_NAME ALL=NOPASSWD: /usr/bin/systemctl restart lofi-streamer
+$USER_NAME ALL=NOPASSWD: /usr/bin/systemctl status lofi-streamer
+$USER_NAME ALL=NOPASSWD: /usr/bin/journalctl -u lofi-streamer -n 40 --no-pager
+$USER_NAME ALL=NOPASSWD: /usr/bin/journalctl -u lofi-dashboard -n 40 --no-pager
+$USER_NAME ALL=NOPASSWD: /usr/bin/pkill
+$USER_NAME ALL=NOPASSWD: /usr/bin/lsof
+$USER_NAME ALL=NOPASSWD: /usr/bin/vcgencmd
+$USER_NAME ALL=NOPASSWD: /usr/sbin/reboot
+$USER_NAME ALL=NOPASSWD: $DASH_HELPER
 EOF
+"
 
 sudo chmod 440 "$SUDOERS_FILE"
 
+echo "✅ sudoers configured for user: $USER_NAME"
+
+# ---------- Enable + start dashboard ----------
+echo "🔁 Reloading systemd…"
+sudo systemctl daemon-reload
+
+echo "🚀 Enabling and starting lofi-dashboard.service…"
+sudo systemctl enable lofi-dashboard >/dev/null 2>&1 || true
+sudo systemctl restart lofi-dashboard
+
 echo
-echo "==============================================="
-echo "   🎉 Dashboard Installed Successfully!"
-echo "==============================================="
-echo "Access at:"
-echo "   👉 http://<pi-ip>:4455"
+echo "✅ Lofi Streamer Dashboard installed."
+echo "📡 Open: http://<pi-ip>:4455  (use 'hostname -I' to get the IP)"
+echo "   Login with the password you configured inside dashboard.py."
 echo
-echo "To restart service:"
-echo "   sudo systemctl restart lofi-dashboard"
-echo
-echo "Done!"
+echo "ℹ️ If anything looks off, check:"
+echo "   sudo systemctl status lofi-dashboard"
+echo "   journalctl -u lofi-dashboard -n 50 --no-pager"
