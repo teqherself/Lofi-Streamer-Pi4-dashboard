@@ -42,7 +42,7 @@ SYSTEM_HELPER = DASH_DIR / "system_helper.sh"
 
 # Your PBKDF2 hash
 PASSWORD_HASH = (
-    "pbkdf2:sha256:260000$U3d8BIKn15z7ql2k$34dde1620a24a98dc5adfde876dee80d399b9af4c3334f6f2f959fbd716285fd"
+    "Replace_me_with_your_password_hash_key"
 )
 
 SECRET_KEY = os.environ.get("LOFI_DASH_SECRET", "change-me-please")
