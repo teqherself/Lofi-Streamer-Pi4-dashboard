@@ -72,22 +72,25 @@ Runs automatically on boot
 
 After installing the main Lofi Streamer, run this one command:
 
-bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/install.sh)
-
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/Install.sh)
+```
 
 This installer:
 
-✔ Automatically detects the Pi user (no hard-coded names)
-✔ Installs Flask + psutil
-✔ Creates LofiStream/Dashboard/
-✔ Downloads all dashboard files from this repo
-✔ Creates /etc/sudoers.d/lofi-dashboard
-✔ Installs lofi-dashboard.service
-✔ Starts dashboard on boot
+- Automatically detects the Pi user (no hard-coded names)
+- Installs Flask + psutil
+- Creates `LofiStream/Dashboard/`
+- Downloads all dashboard files from this repo
+- Creates `/etc/sudoers.d/lofi-dashboard`
+- Installs `lofi-dashboard.service`
+- Starts dashboard on boot
 
 Once installed, open:
 
+```
 http://<pi-ip>:4455
+```
 
 
 Find your Pi IP with:
@@ -95,6 +98,8 @@ Find your Pi IP with:
 hostname -I
 
 📁 Installed Layout
+
+```
 LofiStream/
 ├── Servers/
 │   └── lofi-streamer.py
@@ -107,6 +112,7 @@ LofiStream/
 │       ├── index.html
 │       └── login.html
 └── stream_url.txt
+```
 
 🧭 Usage
 
