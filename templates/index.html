@@ -1,156 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Lofi Streamer Dashboard</title>
+  <meta charset="UTF-8" />
+  <title>Lofi Streamer Dashboard v3.5</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <!-- Simple auto-refresh so logs / stats stay fresh -->
+  <meta http-equiv="refresh" content="10">
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-title">Lofi Streamer Dashboard</span>
-      <span class="brand-sub">GENDEMIK DIGITAL · Release v3.4</span>
-    </div>
-    <form method="POST" action="{{ url_for('logout') }}">
-      <button type="submit" class="btn btn-secondary">Logout</button>
-    </form>
-  </header>
+<body class="dash-body">
+  <div class="page-wrapper">
+    <header class="top-bar">
+      <div>
+        <h1 class="app-title">Lofi Streamer Dashboard</h1>
+        <p class="app-subtitle">
+          GENDEMIK DIGITAL · Host: {{ hostname }} · Updated: {{ now }}
+        </p>
+      </div>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="btn small-btn danger-btn">Logout</button>
+      </form>
+    </header>
 
-  <main class="grid">
-    <!-- Streamer & Camera -->
-    <section class="tile tile-status">
-      <h2>Streamer & Camera</h2>
-      <div class="status-row">
-        <span class="label">Streamer:</span>
-        <span id="streamer_state" class="pill pill-unknown">Unknown</span>
-      </div>
-      <div class="status-row">
-        <span class="label">Camera:</span>
-        <span id="camera_state" class="pill pill-unknown">Unknown</span>
-      </div>
-      <div class="status-row">
-        <span class="label">Now Playing:</span>
-        <span id="now_playing" class="now-playing">loading…</span>
-      </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-container">
+          {% for category, message in messages %}
+            <div class="flash flash-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- 2x2 Tiles -->
+    <section class="tile-grid">
+      <!-- System Tile -->
+      <article class="tile">
+        <h2>System</h2>
+        <ul class="metric-list">
+          <li><span>CPU</span><strong>{{ system.cpu }}</strong></li>
+          <li><span>Memory</span><strong>{{ system.memory }}</strong></li>
+          <li><span>Disk</span><strong>{{ system.disk }}</strong></li>
+          <li><span>Temp</span><strong>{{ system.temp }}</strong></li>
+          <li><span>Uptime</span><strong>{{ system.uptime }}</strong></li>
+        </ul>
+      </article>
+
+      <!-- Streamer Tile -->
+      <article class="tile">
+        <h2>Streamer</h2>
+        <ul class="metric-list">
+          <li><span>Status</span><strong>{{ streamer.status }}</strong></li>
+          <li><span>Enabled</span><strong>{{ streamer.enabled }}</strong></li>
+          <li><span>Now Playing</span><strong>{{ current_track }}</strong></li>
+        </ul>
+      </article>
+
+      <!-- Controls Tile -->
+      <article class="tile">
+        <h2>Controls</h2>
+        <form method="post" action="{{ url_for('action') }}" class="controls-form">
+          <div class="controls-row">
+            <button name="action" value="start_streamer" class="btn primary-btn">Start</button>
+            <button name="action" value="stop_streamer" class="btn warn-btn">Stop</button>
+            <button name="action" value="restart_streamer" class="btn primary-btn">Restart</button>
+          </div>
+          <div class="controls-row">
+            <button name="action" value="camera_restart" class="btn secondary-btn">
+              Restart Camera Only
+            </button>
+          </div>
+          <div class="controls-row">
+            <!-- Two-step reboot: user must click & confirm in browser -->
+            <button
+              type="button"
+              class="btn danger-btn"
+              onclick="if (confirm('Reboot the Pi now?')) { this.form.action.value='reboot'; this.form.submit(); }"
+            >
+              System Reboot
+            </button>
+            <input type="hidden" name="action" value="">
+          </div>
+        </form>
+      </article>
+
+      <!-- Spare Tile (keeps 2x2 layout) -->
+      <article class="tile">
+        <h2>Spare</h2>
+        <p>Reserved space for future widgets (e.g., network stats, disk IO, etc.).</p>
+      </article>
     </section>
 
-    <!-- System Info -->
-    <section class="tile tile-system">
-      <h2>System Info</h2>
-      <ul class="sys-list">
-        <li>CPU: <span id="cpu">–</span></li>
-        <li>RAM: <span id="ram">–</span></li>
-        <li>Disk: <span id="disk">–</span></li>
-        <li>Temp: <span id="temp">–</span></li>
-        <li>Uptime: <span id="uptime">–</span></li>
-        <li>Load: <span id="load">–</span></li>
-      </ul>
-    </section>
-
-    <!-- Logs -->
-    <section class="tile tile-log">
-      <h2>Streamer Log (last 40 lines)</h2>
-      <pre id="logbox" class="logbox">Loading log…</pre>
-    </section>
-
-    <!-- Controls -->
-    <section class="tile tile-controls">
-      <h2>Controls</h2>
-      <div class="controls-grid">
-        <button class="btn btn-primary" data-action="streamer/start">Start Streamer</button>
-        <button class="btn btn-warning" data-action="streamer/restart">Restart Streamer</button>
-        <button class="btn btn-danger" data-action="streamer/stop">Stop Streamer</button>
-
-        <button class="btn btn-outline" data-action="camera/restart">Restart Camera Only</button>
-
-        <a href="{{ url_for('reboot') }}" class="btn btn-danger btn-wide">
-          Reboot System (2-step)
-        </a>
+    <!-- Logs underneath as 3 columns -->
+    <section class="logs-section">
+      <div class="log-column">
+        <h3>Streamer Log (last 40)</h3>
+        <pre class="log-box">{{ streamer_log }}</pre>
       </div>
-
-      <div id="action_status" class="action-status">Ready.</div>
+      <div class="log-column">
+        <h3>Camera Log (filtered, last 40)</h3>
+        <pre class="log-box">{{ camera_log }}</pre>
+      </div>
+      <div class="log-column">
+        <h3>Dashboard Log (last 40)</h3>
+        <pre class="log-box">{{ dash_log }}</pre>
+      </div>
     </section>
-  </main>
-
-  <script>
-    async function refreshStatus() {
-      try {
-        const res = await fetch("/api/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-
-        // Streamer
-        const st = data.streamer || {};
-        const streamerStateEl = document.getElementById("streamer_state");
-        streamerStateEl.textContent = st.state || "unknown";
-        streamerStateEl.className = "pill " + (st.active ? "pill-ok" : "pill-bad");
-
-        // Camera
-        const cam = data.camera || {};
-        const cameraStateEl = document.getElementById("camera_state");
-        cameraStateEl.textContent = cam.detail || "unknown";
-        cameraStateEl.className = "pill " + (cam.active ? "pill-ok" : "pill-warn");
-
-        // Now playing
-        document.getElementById("now_playing").textContent = data.now_playing || "No track";
-
-        // System
-        const sys = data.system || {};
-        document.getElementById("cpu").textContent = sys.cpu || "–";
-        document.getElementById("ram").textContent = sys.ram || "–";
-        document.getElementById("disk").textContent = sys.disk || "–";
-        document.getElementById("temp").textContent = sys.temp || "–";
-        document.getElementById("uptime").textContent = sys.uptime || "–";
-        document.getElementById("load").textContent = sys.load || "–";
-
-        // Logs
-        const logs = data.logs || [];
-        document.getElementById("logbox").textContent = logs.join("\\n");
-
-      } catch (e) {
-        console.error("Status refresh error", e);
-      }
-    }
-
-    async function sendAction(action) {
-      const statusEl = document.getElementById("action_status");
-      statusEl.textContent = "Working…";
-
-      let url = "";
-      let options = { method: "POST" };
-
-      if (action.startsWith("streamer/")) {
-        const cmd = action.split("/")[1];
-        url = "/action/streamer/" + cmd;
-      } else if (action === "camera/restart") {
-        url = "/action/restart_camera";
-      } else {
-        statusEl.textContent = "Unknown action.";
-        return;
-      }
-
-      try {
-        const res = await fetch(url, options);
-        const data = await res.json();
-        statusEl.textContent = data.message || (data.ok ? "OK." : "Error.");
-        refreshStatus();
-      } catch (e) {
-        statusEl.textContent = "Request failed.";
-      }
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      // Wire buttons
-      document.querySelectorAll("[data-action]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const action = btn.getAttribute("data-action");
-          sendAction(action);
-        });
-      });
-
-      refreshStatus();
-      setInterval(refreshStatus, 2000);
-    });
-  </script>
+  </div>
 </body>
 </html>
