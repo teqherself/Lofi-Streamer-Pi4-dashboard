@@ -23,7 +23,7 @@ Copy the output, then open:
 Replace:
 
 ```python
-PASSWORD_HASH = "pbkdf2:sha256:..."
+PASSWORD_HASH = "Replace_me_with_your_password_hash_key"
 ```
 
 Restart dashboard:
