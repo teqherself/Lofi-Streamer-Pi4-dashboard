@@ -133,11 +133,11 @@ body {
 
 /* Logs grid */
 
-.logs-grid {
+.logs-stack {
     margin-top: 18px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
 }
 
 .log-column {
