@@ -87,32 +87,35 @@
         </div>
     </section>
 
-    <!-- LOG ROW: 3 columns -->
-    <section class="logs-grid">
-        <div class="log-column">
-            <div class="log-header">
-                <h3>Streamer Log</h3>
-                <span>journalctl -u lofi-streamer -n 40</span>
-            </div>
-            <pre id="log-streamer" class="log-box">(loading…)</pre>
-        </div>
+    <!-- LOG Stack -->
+<section class="logs-stack">
 
-        <div class="log-column">
-            <div class="log-header">
-                <h3>Camera Log</h3>
-                <span>filtered from lofi-streamer journal</span>
-            </div>
-            <pre id="log-camera" class="log-box">(loading…)</pre>
+    <div class="log-column">
+        <div class="log-header">
+            <h3>Streamer Log</h3>
+            <span>journalctl -u lofi-streamer -n 40</span>
         </div>
+        <pre id="log-streamer" class="log-box">(loading…)</pre>
+    </div>
 
-        <div class="log-column">
-            <div class="log-header">
-                <h3>Dashboard Log</h3>
-                <span>journalctl -u lofi-dashboard -n 40</span>
-            </div>
-            <pre id="log-dashboard" class="log-box">(loading…)</pre>
+    <div class="log-column">
+        <div class="log-header">
+            <h3>Camera Log</h3>
+            <span>filtered from lofi-streamer journal</span>
         </div>
-    </section>
+        <pre id="log-camera" class="log-box">(loading…)</pre>
+    </div>
+
+    <div class="log-column">
+        <div class="log-header">
+            <h3>Dashboard Log</h3>
+            <span>journalctl -u lofi-dashboard -n 40</span>
+        </div>
+        <pre id="log-dashboard" class="log-box">(loading…)</pre>
+    </div>
+
+</section>
+
 </main>
 
 <script>
