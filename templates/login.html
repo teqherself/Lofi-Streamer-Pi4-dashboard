@@ -1,38 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Lofi Dashboard Login</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Lofi Dashboard Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="dash-body">
-  <div class="login-wrapper">
-    <div class="login-card">
-      <h1 class="app-title">Lofi Streamer Dashboard</h1>
-      <p class="app-subtitle">GENDEMIK DIGITAL · Secure Login</p>
 
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div class="flash-container">
-            {% for category, message in messages %}
-              <div class="flash flash-{{ category }}">{{ message }}</div>
-            {% endfor %}
-          </div>
-        {% endif %}
-      {% endwith %}
+<body class="login-body">
 
-      <form method="post" class="login-form">
-        <label for="password">Password</label>
-        <input
-          type="password"
-          id="password"
-          name="password"
-          placeholder="Enter dashboard password"
-          required
-        />
-        <button type="submit" class="btn primary-btn">Login</button>
-      </form>
-    </div>
-  </div>
+<div class="login-box">
+    <h2>Lofi Dashboard Login</h2>
+
+    {% if error %}
+        <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <form method="post">
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Login</button>
+    </form>
+</div>
+
 </body>
 </html>
