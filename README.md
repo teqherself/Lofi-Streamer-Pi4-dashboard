@@ -1,108 +1,133 @@
-🎧 GENDEMIK DIGITAL — Lofi Streamer Dashboard Add-On
+# 🎧 Lofi Streamer + Dashboard (GENDEMIK DIGITAL)
+*Maintained by **Ms Stevie Woo (GENDEMIK DIGITAL)** — Raspberry Pi 4/5 Picamera2 Edition*
 
-Raspberry Pi 4 / 5 • Picamera2 Edition
+<a><img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi"></a>
+<a><img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"></a>
+<a><img src="https://img.shields.io/badge/Framework-Flask-green?style=for-the-badge&logo=flask"></a>
+<a><img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge"></a>
 
-<p align="center"> <img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi"> <img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"> <img src="https://img.shields.io/badge/Framework-Flask-black?style=for-the-badge&logo=flask"> <img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge"> </p>
-Overview
+The **Lofi Streamer** is a camera-first YouTube livestream engine designed for Raspberry Pi.  
+The **Dashboard** is an optional add-on that provides full web-based control, monitoring, logs, and system stats.
 
-This repository contains the GENDEMIK DIGITAL Lofi Streamer Dashboard Add-On.
-It is installed after the main streamer and provides a secure web control panel with:
+This repo contains **the Dashboard Add-On**.
 
-Start / Stop / Restart of the lofi-streamer service
+---
 
-CPU / RAM / Disk / Temperature metrics
+# 🌟 Features
 
-“Now Playing” display from /tmp/current_track.txt
+### ✔️ Streamer Controls  
+- Start / Stop / Restart the `lofi-streamer` service  
+- Restart camera hardware (clears lockups)  
 
-Live system uptime + streamer uptime
+### ✔️ Streamer Monitoring  
+- Shows service status  
+- Shows uptime  
+- Shows currently playing track from `/tmp/current_track.txt`  
+- Last 40 lines of:
+  - Streamer Logs  
+  - Dashboard Logs  
+  - Camera Lock Diagnostics  
 
-Three stacked log views (Streamer / Camera / Dashboard)
+### ✔️ System Monitoring  
+- CPU usage, RAM, Disk, Load, Temperature  
+- Auto-refresh  
+- Clean 2×2 tile layout  
+- Dedicated logs area (stacked by column)
 
-Camera recovery (forces release of /dev/video*, /dev/media*)
+### ✔️ Secure Login  
+- PBKDF2-SHA256 hashing  
+- Single password stored internally  
+- Easily changeable (docs included)
 
-Secure login using PBKDF2-SHA256 password hashing
+---
 
-Installation (Add-On)
+# 📦 Installation (one-line installer)
 
-Run this after the main Lofi Streamer is already installed:
+Run this on your Raspberry Pi **after the streamer itself is installed**:
 
+```bash
 bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/install.sh)
+```
 
+This will:
 
-The installer will:
+- Auto-detect your Pi username  
+- Install Python3 deps (Flask, psutil)  
+- Create the Dashboard folder structure  
+- Install & enable `lofi-dashboard.service`  
+- Add the correct sudoers rules  
+- Start the dashboard automatically
 
-Detect your Pi username automatically
+---
 
-Install Flask and psutil
+# 🌐 Usage
 
-Install dashboard files into:
+After install, open:
 
-~/LofiStream/Dashboard/
+```
+http://<your-pi-ip>:4455
+```
 
+Use:
 
-Install systemd service:
-
-/etc/systemd/system/lofi-dashboard.service
-
-
-Install sudoers permissions:
-
-/etc/sudoers.d/lofi-dashboard
-
-
-Start the dashboard and enable it on boot
-
-After installation, open:
-
-http://<pi-ip>:4455
-
-
-Find your Pi’s IP:
-
+```bash
 hostname -I
+```
 
-Setting / Changing the Dashboard Password
+to find your Pi’s IP.
 
-The dashboard uses a hashed password stored in dashboard.py.
+Login using the hashed password configured in `dashboard.py`.
 
-1. Generate your PBKDF2-SHA256 hash
+Once inside, you’ll see:
 
-Run:
+- **2×2 tiles** (system stats + controls)  
+- **Three log columns**  
+  - streamer log  
+  - camera lock log  
+  - dashboard log  
 
+Everything updates automatically.
+
+---
+
+# 🔑 Password Configuration
+
+The dashboard uses a **PBKDF2-SHA256 hash**, not a plain password.
+
+### Generate a new password hash:
+
+```bash
 python3 - << 'EOF'
 from werkzeug.security import generate_password_hash
-print(generate_password_hash("YOUR_PASSWORD_HERE"))
+print(generate_password_hash("YOUR_NEW_PASSWORD"))
 EOF
+```
 
+Then open:
 
-Copy the output hash.
+```
+~/LofiStream/Dashboard/dashboard.py
+```
 
-2. Edit dashboard.py
+Find:
 
-Open the file:
+```python
+PASSWORD_HASH = "pbkdf2:sha256:...."
+```
 
-nano ~/LofiStream/Dashboard/dashboard.py
+Replace it with your new hash.
 
+Reboot dashboard:
 
-Find this line:
-
-LOGIN_PASSWORD_HASH = "CHANGE_ME"
-
-
-Replace with the full hash you generated, for example:
-
-LOGIN_PASSWORD_HASH = "pbkdf2:sha256:260000$ABC123$XYZ987..."
-
-
-Save & exit.
-
-3. Restart dashboard
+```bash
 sudo systemctl restart lofi-dashboard
+```
 
+---
 
-Log in with the plain password you originally typed.
+# 📁 Repository Structure
 
-Directory Structure
+```
 LofiStream/
 ├── Servers/
 │   └── lofi-streamer.py
@@ -115,103 +140,49 @@ LofiStream/
 │       ├── index.html
 │       └── login.html
 └── stream_url.txt
+```
 
+---
 
-System files installed:
+# 🛠️ Helpful Commands
 
-/etc/systemd/system/lofi-dashboard.service
-/etc/sudoers.d/lofi-dashboard
-
-Dashboard Features (v3.5.x)
-Stream Controls
-
-Start / Stop / Restart streamer
-
-Live status indicator
-
-Stream Information
-
-Current track
-
-Stream uptime
-
-Pi system uptime
-
-System Metrics
-
-CPU usage
-
-RAM usage
-
-Disk usage
-
-Temperature
-
-Logs (stacked columns)
-
-Streamer log — journalctl -u lofi-streamer -n 40 --no-pager
-
-Camera / capture log — same retrieval method
-
-Dashboard log — journalctl -u lofi-dashboard -n 40 --no-pager
-Each appears in its own scrollable panel.
-
-Recovery Tools
-
-Restart camera (kills libcamera/ffmpeg/picamera2 locks)
-
-System reboot (two-step confirmation)
-
-Service Commands
-Dashboard
+### Dashboard
+```
 sudo systemctl status lofi-dashboard
 sudo systemctl restart lofi-dashboard
-journalctl -u lofi-dashboard -n 50 --no-pager
+journalctl -u lofi-dashboard -n 40 --no-pager
+```
 
-Streamer
-sudo systemctl status lofi-streamer
+### Streamer
+```
+sudo systemctl start lofi-streamer
+sudo systemctl stop lofi-streamer
 sudo systemctl restart lofi-streamer
 journalctl -u lofi-streamer -n 40 --no-pager
+```
 
-Troubleshooting
-Dashboard loads but buttons don’t work
+---
 
-Check sudoers:
+# ❌ Uninstall
 
-cat /etc/sudoers.d/lofi-dashboard
-
-
-Ensure your Pi user is present.
-
-Login always fails
-
-Regenerate a hash and update LOGIN_PASSWORD_HASH.
-
-Logs missing
-
-Check if the services are actually running.
-
-Uninstall
+```bash
 sudo systemctl stop lofi-dashboard
 sudo systemctl disable lofi-dashboard
 sudo rm /etc/systemd/system/lofi-dashboard.service
 sudo rm /etc/sudoers.d/lofi-dashboard
 rm -rf ~/LofiStream/Dashboard
 sudo systemctl daemon-reload
+```
 
-Roadmap
+---
 
-Multi-stream YouTube selector
+# 🗺️ Roadmap
 
-Dark mode
+- Dark mode  
+- OTA streamer updater  
+- Inline Pi camera preview  
+- Multi-stream YouTube selector  
 
-Inline camera preview
-
-On-device settings editor
-
-OTA streamer updater
-
-Maintainer
-
-Ms Stevie Woo — GENDEMIK DIGITAL (Manchester, UK)
-GitHub: https://github.com/teqherself
+Maintained with ❤️ by  
+**Ms Stevie Woo (GENDEMIK DIGITAL)**  
+Manchester, UK  
