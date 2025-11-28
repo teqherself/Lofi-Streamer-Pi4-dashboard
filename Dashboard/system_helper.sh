@@ -14,8 +14,7 @@ case "$ACTION" in
     echo "Clearing camera locks (ffmpeg/libcamera/picamera2)..."
 
     # Kill any processes using camera device nodes
-    # Extract PIDs from lsof ignoring header row
-    PIDS=$(lsof /dev/media* /dev/video* /dev/v4l-subdev* 2>/dev/null | awk 'NR>1 {print $2}' | sort -u)
+    PIDS=$(lsof /dev/media* /dev/video* /dev/v4l-subdev* 2>/dev/null | awk 'NR>1 {print $2}')
 
     if [ -n "$PIDS" ]; then
       echo "Killing PIDs: $PIDS"
@@ -26,7 +25,7 @@ case "$ACTION" in
       echo "No camera lock processes found via lsof."
     fi
 
-    # Also kill any leftovers just in case
+    # Also kill any obvious leftovers
     pkill -f libcamera 2>/dev/null || true
     pkill -f picamera2 2>/dev/null || true
     pkill -f ffmpeg 2>/dev/null || true
