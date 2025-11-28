@@ -1,25 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Lofi Dashboard Login</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="login-body">
-  <div class="login-card">
-    <h1>Lofi Streamer Dashboard</h1>
-    <p class="login-sub">GENDEMIK DIGITAL · Secure Access</p>
+<body class="dash-body">
+  <div class="login-wrapper">
+    <div class="login-card">
+      <h1 class="app-title">Lofi Streamer Dashboard</h1>
+      <p class="app-subtitle">GENDEMIK DIGITAL · Secure Login</p>
 
-    {% if error %}
-      <div class="alert alert-error">{{ error }}</div>
-    {% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-container">
+            {% for category, message in messages %}
+              <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
 
-    <form method="POST">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autofocus required>
-
-      <button type="submit" class="btn btn-primary btn-full">Login</button>
-    </form>
+      <form method="post" class="login-form">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Enter dashboard password"
+          required
+        />
+        <button type="submit" class="btn primary-btn">Login</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>
