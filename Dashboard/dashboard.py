@@ -9,7 +9,7 @@ app = Flask(__name__)
 app.secret_key = "lofi-dashboard-secret"
 
 # ✔ PBKDF2 hashed password (replace with your hash if needed)
-PASSWORD_HASH = "pbkdf2:sha256:260000$U3d8BIKn15z7ql2k$34dde1620a24a98dc5adfde876dee80d399b9af4c3334f6f2f959fbd716285fd"
+PASSWORD_HASH = "Replace_me_with_your_password_hash_key"
 
 BASE = os.path.expanduser("~/LofiStream")
 
