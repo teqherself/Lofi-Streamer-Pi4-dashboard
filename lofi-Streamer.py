@@ -3,41 +3,49 @@ import os
 import time
 import random
 import socket
+import threading
 import subprocess
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
 # -------------------------------------------------------
-#  LOFI STREAMER v7.8 — Picamera2 Edition (540p Stable)
-#  + Live Picamera2 video (960×540)
-#  + Auto-position top-right logo
-#  + Bottom-Hugging Right-Aligned Now Playing
-#  + Pi4-Safe encoding (1.8 Mbps)
-#  + YouTube-compliant GOP (4 seconds)
+#  LOFI STREAMER v8.7.1 — H264 Baseline + Classic Viz + YouTube Timestamp Fix
+#  Changes vs v8.7:
+#    * Removed unsupported ffmpeg flag: -video_track_timescale
+#    * Pipeline now uses stable: -use_wallclock_as_timestamps 1 + -fflags +genpts
+#    * Prevents ffmpeg from exiting, allows YouTube to receive video
 # -------------------------------------------------------
 
-VERSION = "7.8-picam-540p"
+VERSION = "8.7.1"
 
-# ---------------- OUTPUT SETTINGS ----------------
-
-OUTPUT_W = 960
-OUTPUT_H = 540
+OUTPUT_W = 1280
+OUTPUT_H = 720
 
 LOGO_PADDING = 40
 TEXT_PADDING = 40
-TRACK_EXIT_BUFFER = 5
+VIZ_HEIGHT = 120
 
 CAM_FIFO = Path("/tmp/camfifo.ts")
+AUDIO_FIFO = Path("/tmp/lofi_audio.pcm")
+NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
 
-# ---------------- PICAMERA2 IMPORT ----------------
+CHOSEN_FPS: Optional[int] = None
+GOP_SIZE: Optional[int] = None
 
+# Picamera2
 try:
     from picamera2 import Picamera2
-    from picamera2.encoders import MJPEGEncoder
+    from picamera2.encoders import H264Encoder
     from picamera2.outputs import FileOutput
     PICAMERA2_AVAILABLE = True
 except ImportError:
     PICAMERA2_AVAILABLE = False
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except:
+    PSUTIL_AVAILABLE = False
 
 # ---------------- BASE DIR ----------------
 
@@ -53,25 +61,20 @@ def _env_path(name: str, default: Path) -> Path:
     raw = Path(os.environ.get(name, str(default))).expanduser()
     try:
         return raw.resolve(strict=False)
-    except Exception:
+    except:
         return raw
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
+def _env_int(name, default):
     try:
-        return int(raw)
+        return int(os.environ.get(name, default))
     except:
         return default
 
-def _env_bool(name: str, default: bool = False) -> bool:
+def _env_bool(name, default=False):
     raw = os.environ.get(name)
     if raw is None:
         return default
     return raw.lower() in {"1", "true", "yes", "on"}
-
-# ---------------- PATHS ----------------
 
 PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
 LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
@@ -79,7 +82,7 @@ LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
 STREAM_URL_FILE = _env_path("LOFI_STREAM_URL_FILE", BASE_DIR / "stream_url.txt")
 STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
 
-FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "LoFiLogo700.png")
+FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "TestLogo200.png")
 
 FALLBACK_FPS = _env_int("LOFI_FALLBACK_FPS", 25)
 
@@ -88,12 +91,21 @@ CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
 
 SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
 
-# ---------------- BOOT WAIT ----------------
+# ---------------- NETWORK CHECK ----------------
+
+def check_network() -> bool:
+    try:
+        with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
+            return True
+    except:
+        return False
+
+# ---------------- PI READY ----------------
 
 def wait_for_pi_ready():
     print("⏳ Waiting for Pi to be fully ready...")
 
-    while os.system("ping -c1 1.1.1.1 > /dev/null 2>&1") != 0:
+    while os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") != 0:
         print("⏳ Waiting for network…")
         time.sleep(2)
     print("🌐 Internet OK")
@@ -105,281 +117,345 @@ def wait_for_pi_ready():
             break
         except:
             print("⏳ Waiting for DNS…")
-            time.sleep(2)
+            time.sleep(1)
 
     while True:
         try:
-            yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
+            yr = int(subprocess.check_output(["date", "+%Y"]))
         except:
             yr = 1970
         if yr >= 2023:
             print("⏱ Time synced")
             break
         print("⏳ Waiting for NTP…")
-        time.sleep(2)
+        time.sleep(1)
 
     print("✅ Pi Ready!\n")
 
-# ---------------- TRACK FILTER ----------------
+# ---------------- FPS ----------------
 
-def _is_valid_audio(t: Path) -> bool:
-    lower = t.name.lower()
-    if lower.startswith("._") or lower.startswith("."):
-        return False
-    return t.suffix.lower() in [".mp3", ".wav", ".flac", ".m4a"]
+def detect_pi_model():
+    try:
+        with open("/proc/device-tree/model") as f:
+            m = f.read().lower()
+            if "raspberry pi 5" in m: return 5
+            if "raspberry pi 4" in m: return 4
+    except:
+        pass
+    return 0
 
-# ---------------- LOADERS ----------------
+def choose_fps():
+    model = detect_pi_model()
+    if model == 5:
+        base = 30
+    elif model == 4:
+        base = 25
+    else:
+        base = FALLBACK_FPS
 
-def load_stream_url() -> str:
+    if PSUTIL_AVAILABLE:
+        load = psutil.cpu_percent(interval=1.0)
+        print(f"🧠 Startup CPU load: {load:.1f}%")
+        if load > 85:
+            return 20
+
+    print(f"🎞 Auto-selected FPS: {base}")
+    return base
+
+# ---------------- TRACKS ----------------
+
+def load_stream_url():
     if STREAM_URL_ENV:
-        print("🔐 Using RTMP URL from environment.")
-        return STREAM_URL_ENV.strip()
+        return STREAM_URL_ENV
     if STREAM_URL_FILE.exists():
         print(f"📄 Loaded RTMP URL from {STREAM_URL_FILE}")
         return STREAM_URL_FILE.read_text().strip()
-    print("❌ No RTMP URL found!")
+    print("❌ Missing RTMP URL")
     return ""
 
+def _is_valid_audio(t: Path):
+    n = t.name.lower()
+    if n.startswith("._") or n.startswith("."):
+        return False
+    return t.suffix.lower() in [".mp3", ".wav", ".flac", ".m4a"]
+
 def load_tracks() -> List[Path]:
-    if not PLAYLIST_DIR.exists():
-        print("❌ Sounds folder missing:", PLAYLIST_DIR)
-        return []
     tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
     print(f"🎶 Loaded {len(tracks)} tracks.")
     return tracks
 
-def _playlist_iterator(tracks: List[Path]) -> Iterator[Path]:
+def _playlist_iterator(tracks):
     while True:
-        cycle = list(tracks)
-        random.shuffle(cycle)
-        for t in cycle:
+        lst = list(tracks)
+        random.shuffle(lst)
+        for t in lst:
             yield t
 
-# ---------------- NETWORK CHECK ----------------
+# ---------------- NOW PLAYING ----------------
 
-def check_network() -> bool:
-    if SKIP_NETWORK_CHECK:
-        return True
-    try:
-        with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
-            return True
-    except:
-        return False
-
-# ---------------- FIFO ----------------
-
-def ensure_fifo():
-    if CAM_FIFO.exists():
-        try:
-            CAM_FIFO.unlink()
-        except:
-            pass
-    os.mkfifo(CAM_FIFO)
-    print(f"✓ FIFO ready: {CAM_FIFO}")
-
-# ---------------- METADATA ----------------
-
-def _escape(s: str) -> str:
+def _escape(s: str):
     return s.replace(":", r"\:")
 
-def _get_now_playing(t: Path) -> str:
-    title = ""
-    artist = ""
+def get_nowplaying(t: Path):
     try:
         import mutagen
         m = mutagen.File(t, easy=True)
-        if m:
-            title = m.get("title", [""])[0]
-            artist = m.get("artist", [""])[0]
+        title = m.get("title", [""])[0]
+        artist = m.get("artist", [""])[0]
+        if not title:
+            title = t.stem
     except:
-        pass
-
-    if not title:
         title = t.stem
+        artist = ""
     return _escape(f"{artist} - {title}" if artist else title)
 
-# ---------------- FILTER CHAIN ----------------
+def write_nowplaying(txt):
+    NOWPLAYING_FILE.write_text(f"Now Playing: {txt}")
 
-def _build_filter_chain(video_ref: str, nowplaying: str) -> str:
+# ---------------- CLASSIC BAR VISUALISER ----------------
+
+def _build_filter_chain(video_ref: str) -> str:
     """
-    Auto-position logo in top-right:
-        x = W - overlay_w - LOGO_PADDING
-        y = LOGO_PADDING
-    Bottom-right now playing.
+    Compact bar visualiser (200px × 24px),
+    aligned perfectly with Now Playing text on the right.
     """
-    text_y = OUTPUT_H - 25 - 24  # consistent with 540p
+
+    viz_w = 200     # width as requested
+    viz_h = 24      # EXACT same height as the Now Playing text (fontsize=24)
+
+    np_file = str(NOWPLAYING_FILE)
+
+    # Match the vertical position of the Now Playing text
+    text_y = OUTPUT_H - viz_h - 10   # 10px margin above bottom
+    viz_y = text_y                   # align both exactly
+
+    viz_x = 40   # small left margin
+
+    # Classic Lofi bar visualiser but compact
+    viz = (
+        f"[1:a]showfreqs=mode=bar:"
+        f"ascale=log:colors=0xCCCCCC:"
+        f"size={viz_w}x{viz_h}[viz];"
+    )
+
     logo_x = f"W-w-{LOGO_PADDING}"
     logo_y = LOGO_PADDING
 
     if FFMPEG_LOGO.exists():
         return (
-            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H}:flags=bicubic,format=yuv420p[v0];"
+            viz +
+            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v0];"
             f"[v0][2:v]overlay={logo_x}:{logo_y}[v1];"
-            f"[v1]drawtext=text='Now Playing\\: {nowplaying}':"
-            f"fontcolor=white:fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
+            f"[v1][viz]overlay={viz_x}:{viz_y}[v2];"
+            f"[v2]drawtext=textfile='{np_file}':reload=1:"
+            f"fontcolor=white:fontsize=24:"
+            f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
         )
+
     else:
         return (
-            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H}:flags=bicubic,format=yuv420p[v1];"
-            f"[v1]drawtext=text='Now Playing\\: {nowplaying}':"
-            f"fontcolor=white:fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
+            viz +
+            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v0];"
+            f"[v0][viz]overlay={viz_x}:{viz_y}[v1];"
+            f"[v1]drawtext=textfile='{np_file}':reload=1:"
+            f"fontcolor=white:fontsize=24:"
+            f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
         )
-
-# ---------------- TRACK DURATION ----------------
-
-def _track_duration(t: Path) -> int:
-    try:
-        import mutagen
-        m = mutagen.File(t)
-        if m and m.info:
-            return int(m.info.length)
-    except:
-        pass
-    try:
-        r = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(t),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        return int(float(r.stdout.strip()))
-    except:
-        return 180
 
 # ---------------- CAMERA ----------------
 
-def start_camera() -> Optional["Picamera2"]:
+def start_camera():
     if not PICAMERA2_AVAILABLE:
-        print("❌ Picamera2 not available.")
+        print("❌ Picamera2 not installed.")
         return None
+
+    fps = CHOSEN_FPS
 
     print("📸 Initialising Picamera2…")
     picam = Picamera2()
 
-    video_config = picam.create_video_configuration(
-        main={"size": (OUTPUT_W, OUTPUT_H)},
-        controls={"FrameRate": FALLBACK_FPS}
+    config = picam.create_video_configuration(
+        main={"format": "YUV420", "size": (OUTPUT_W, OUTPUT_H)},
+        controls={"FrameRate": fps}
     )
-    picam.configure(video_config)
+    picam.configure(config)
 
-    encoder = MJPEGEncoder()
-    output = FileOutput(str(CAM_FIFO))
+    encoder = H264Encoder(bitrate=1800000)
+    out = FileOutput(str(CAM_FIFO))
 
-    picam.start_recording(encoder, output)
-    print(f"📸 Picamera2 → {CAM_FIFO}")
+    try:
+        picam.start_recording(encoder, out)
+    except Exception as e:
+        print("❌ Failed to start camera:", e)
+        return None
+
+    print(f"📸 Picamera2 (H264 Baseline {fps}fps) → {CAM_FIFO}")
     return picam
 
-def stop_camera(picam: Optional["Picamera2"]):
-    if not picam:
-        return
+def stop_camera(picam):
+    if not picam: return
     print("📷 Stopping Picamera2…")
-    try:
-        picam.stop_recording()
-    except:
-        pass
-    try:
-        picam.close()
-    except:
-        pass
-    print("📷 Camera stopped.")
+    try: picam.stop_recording()
+    except: pass
+    try: picam.close()
+    except: pass
 
-# ---------------- START STREAM ----------------
+# ---------------- AUDIO FEEDER ----------------
 
-def start_stream(track: Path, stream_url: str, duration: int):
-    nowp = _get_now_playing(track)
-    print(f"🎧 Now playing: {nowp}")
+def audio_feeder(tracks, stop_event):
+    print("🎚 Audio feeder started.")
+    with open(AUDIO_FIFO, "wb", buffering=0) as fd:
+        for t in _playlist_iterator(tracks):
+            if stop_event.is_set(): break
 
-    ensure_fifo()
+            np = get_nowplaying(t)
+            print(f"🎧 {np}")
+            write_nowplaying(np)
+
+            cmd = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-re", "-vn", "-i", str(t),
+                "-f", "s16le", "-ar", "44100", "-ac", "2",
+                "pipe:1"
+            ]
+            p = subprocess.Popen(cmd, stdout=fd)
+
+            while p.poll() is None and not stop_event.is_set():
+                time.sleep(0.5)
+
+            if stop_event.is_set():
+                try: p.terminate()
+                except: pass
+                break
+
+    print("🎚 Audio feeder stopped.")
+
+# ---------------- FFMPEG PIPELINE ----------------
+
+def start_pipeline(stream_url: str):
+    print("🎥 Starting ffmpeg pipeline…")
+
+    g = GOP_SIZE
 
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
+
+        # Timestamp stabilisation (YouTube safe)
+        "-fflags", "+genpts",
+        "-use_wallclock_as_timestamps", "1",
+
+        # Video input
         "-thread_queue_size", "512",
-        "-f", "mjpeg", "-re", "-i", str(CAM_FIFO),   # CAMERA
+        "-f", "h264", "-i", str(CAM_FIFO),
+
+        # Audio input
         "-thread_queue_size", "512",
-        "-i", str(track),                            # AUDIO
+        "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", str(AUDIO_FIFO),
     ]
 
     if FFMPEG_LOGO.exists():
-        cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]  # LOGO
+        cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
 
-    filter_chain = _build_filter_chain("[0:v]", nowp)
+    filter_chain = _build_filter_chain("[0:v]")
 
     cmd += [
         "-filter_complex", filter_chain,
         "-map", "[vout]", "-map", "1:a",
+
         "-c:v", "libx264",
+        "-profile:v", "baseline",
+        "-level", "3.1",
+
         "-preset", "ultrafast",
         "-b:v", "1800k",
         "-maxrate", "1800k",
         "-bufsize", "2400k",
-        "-g", "100", "-keyint_min", "100",  # 25 fps × 4 sec = 100 frames
+
+        "-g", str(g),
+        "-keyint_min", str(g),
         "-sc_threshold", "0",
+
         "-pix_fmt", "yuv420p",
+
         "-c:a", "aac",
         "-b:a", "128k",
-        "-shortest",
-        "-f", "flv", stream_url,
+        "-ar", "44100",
+
+        "-f", "flv", stream_url
     ]
 
-    p = subprocess.Popen(cmd)
-    picam = start_camera()
+    return subprocess.Popen(cmd)
 
-    if not picam:
-        p.terminate()
-        return p, None
-
-    return p, picam
-
-# ---------------- MAIN LOOP ----------------
+# ---------------- MAIN ----------------
 
 def main():
-    print(f"🌙 LOFI STREAMER v{VERSION} — Picamera2 540p Edition\n")
+    global CHOSEN_FPS, GOP_SIZE
 
-    if not PICAMERA2_AVAILABLE:
-        print("❌ Install Picamera2 first: sudo apt install python3-picamera2")
-        return
+    print(f"🌙 LOFI STREAMER v{VERSION} — H264 Baseline + YouTube Fix\n")
 
     wait_for_pi_ready()
 
     stream_url = load_stream_url()
     if not stream_url:
-        print("❌ Missing RTMP URL!")
         return
 
     tracks = load_tracks()
     if not tracks:
-        print("❌ No tracks found!")
         return
 
-    for t in _playlist_iterator(tracks):
+    CHOSEN_FPS = choose_fps()
+    GOP_SIZE = CHOSEN_FPS * 4
+    print(f"🎞 Final FPS: {CHOSEN_FPS}, GOP: {GOP_SIZE}")
 
-        if not check_network():
-            print("🌐 Offline, retrying in 5s…")
-            time.sleep(5)
-            continue
+    if not SKIP_NETWORK_CHECK and not check_network():
+        print("⚠️ RTMP host not reachable.")
 
-        dur = _track_duration(t)
-        p, picam = start_stream(t, stream_url, dur)
+    for f in (CAM_FIFO, AUDIO_FIFO):
+        if f.exists(): os.unlink(f)
+        os.mkfifo(f)
+        print(f"✓ FIFO ready: {f}")
 
-        if picam is None:
-            print("❌ Camera failed.")
-            return
+    write_nowplaying("Initialising…")
 
-        try:
-            p.wait(timeout=dur + TRACK_EXIT_BUFFER)
-        except subprocess.TimeoutExpired:
-            p.terminate()
-            try:
-                p.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                p.kill()
-        finally:
-            stop_camera(picam)
-            time.sleep(1)
+    stop_event = threading.Event()
+
+    ff = start_pipeline(stream_url)
+
+    picam = start_camera()
+    if not picam:
+        ff.terminate()
+        return
+
+    audio_thread = threading.Thread(
+        target=audio_feeder, args=(tracks, stop_event), daemon=True
+    )
+    audio_thread.start()
+
+    try:
+        while True:
+            if ff.poll() is not None:
+                print("❌ ffmpeg exited.")
+                break
+
+            if PSUTIL_AVAILABLE:
+                print(f"🧠 CPU {psutil.cpu_percent():.1f}%")
+
+            time.sleep(0.5)
+
+    except KeyboardInterrupt:
+        print("👋 Stopping streamer...")
+
+    finally:
+        stop_event.set()
+        try: ff.terminate()
+        except: pass
+
+        stop_camera(picam)
+
+        try: audio_thread.join(timeout=3)
+        except: pass
+
+        print("👋 Streamer shut down.")
 
 if __name__ == "__main__":
     main()
