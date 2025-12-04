@@ -9,21 +9,24 @@ from pathlib import Path
 from typing import List, Optional
 
 # -------------------------------------------------------
-#  LOFI STREAMER v8.7.1 — H264 Baseline + Classic Viz + YouTube Timestamp Fix
-#  Changes vs v8.7:
-#    * Removed unsupported ffmpeg flag: -video_track_timescale
-#    * Pipeline now uses stable: -use_wallclock_as_timestamps 1 + -fflags +genpts
-#    * Prevents ffmpeg from exiting, allows YouTube to receive video
+#  LOFI STREAMER v8.7.8 — Pi4-Stability Edition
+# -------------------------------------------------------
+#  ✔ Pi4 tuned to 20fps, ~1500k video
+#  ✔ Pi5 tuned to 30fps, ~2500k video
+#  ✔ Timestamp top-left (aligned with logo vertically)
+#  ✔ Logo overlay (top-right)
+#  ✔ 7-bar Lofi visualiser
+#  ✔ Only Pi-safe ffmpeg options (no unsupported flags)
+#  ✔ YouTube-safe timing (no drift)
 # -------------------------------------------------------
 
-VERSION = "8.7.1"
+VERSION = "8.7.8"
 
 OUTPUT_W = 1280
 OUTPUT_H = 720
 
 LOGO_PADDING = 40
 TEXT_PADDING = 40
-VIZ_HEIGHT = 120
 
 CAM_FIFO = Path("/tmp/camfifo.ts")
 AUDIO_FIFO = Path("/tmp/lofi_audio.pcm")
@@ -31,6 +34,11 @@ NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
 
 CHOSEN_FPS: Optional[int] = None
 GOP_SIZE: Optional[int] = None
+
+# These will be set based on Pi model
+VIDEO_BITRATE = "1800k"
+VIDEO_MAXRATE = "1800k"
+VIDEO_BUFSIZE = "2400k"
 
 # Picamera2
 try:
@@ -82,7 +90,7 @@ LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
 STREAM_URL_FILE = _env_path("LOFI_STREAM_URL_FILE", BASE_DIR / "stream_url.txt")
 STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
 
-FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "TestLogo200.png")
+FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "picam.png")
 
 FALLBACK_FPS = _env_int("LOFI_FALLBACK_FPS", 25)
 
@@ -100,67 +108,69 @@ def check_network() -> bool:
     except:
         return False
 
-# ---------------- PI READY ----------------
-
-def wait_for_pi_ready():
-    print("⏳ Waiting for Pi to be fully ready...")
-
-    while os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") != 0:
-        print("⏳ Waiting for network…")
-        time.sleep(2)
-    print("🌐 Internet OK")
-
-    while True:
-        try:
-            socket.gethostbyname("google.com")
-            print("🔍 DNS OK")
-            break
-        except:
-            print("⏳ Waiting for DNS…")
-            time.sleep(1)
-
-    while True:
-        try:
-            yr = int(subprocess.check_output(["date", "+%Y"]))
-        except:
-            yr = 1970
-        if yr >= 2023:
-            print("⏱ Time synced")
-            break
-        print("⏳ Waiting for NTP…")
-        time.sleep(1)
-
-    print("✅ Pi Ready!\n")
-
-# ---------------- FPS ----------------
+# ---------------- PI MODEL / PARAMS ----------------
 
 def detect_pi_model():
     try:
         with open("/proc/device-tree/model") as f:
             m = f.read().lower()
-            if "raspberry pi 5" in m: return 5
-            if "raspberry pi 4" in m: return 4
+            if "raspberry pi 5" in m:
+                return 5
+            if "raspberry pi 4" in m:
+                return 4
     except:
         pass
     return 0
 
-def choose_fps():
+def choose_stream_params():
+    """
+    Returns (fps, bitrate, maxrate, bufsize) tuned per model.
+    Pi 4  -> 20fps, ~1500k
+    Pi 5  -> 30fps, ~2500k
+    Other -> fallback FPS, ~1800k
+    """
     model = detect_pi_model()
+
+    # defaults
+    fps = FALLBACK_FPS
+    bitrate = "1800k"
+    maxrate = "1800k"
+    bufsize = "2400k"
+
     if model == 5:
-        base = 30
+        fps = 30
+        bitrate = "2500k"
+        maxrate = "3000k"
+        bufsize = "4000k"
     elif model == 4:
-        base = 25
-    else:
-        base = FALLBACK_FPS
+        fps = 20
+        bitrate = "1500k"
+        maxrate = "1800k"
+        bufsize = "2400k"
 
     if PSUTIL_AVAILABLE:
         load = psutil.cpu_percent(interval=1.0)
         print(f"🧠 Startup CPU load: {load:.1f}%")
+        # If system is already hammered at boot, be extra safe
         if load > 85:
-            return 20
+            print("⚠️ High startup CPU load, softening settings.")
+            fps = max(15, fps - 5)
+            # drop bitrate ~20%
+            def soften(br):
+                if not br.endswith("k"):
+                    return br
+                try:
+                    v = int(br[:-1])
+                    v = int(v * 0.8)
+                    return f"{v}k"
+                except:
+                    return br
+            bitrate = soften(bitrate)
+            maxrate = soften(maxrate)
 
-    print(f"🎞 Auto-selected FPS: {base}")
-    return base
+    print(f"🎞 Auto-selected FPS: {fps}")
+    print(f"📺 Video bitrate: {bitrate}, maxrate: {maxrate}, bufsize: {bufsize}")
+    return fps, bitrate, maxrate, bufsize
 
 # ---------------- TRACKS ----------------
 
@@ -212,29 +222,28 @@ def get_nowplaying(t: Path):
 def write_nowplaying(txt):
     NOWPLAYING_FILE.write_text(f"Now Playing: {txt}")
 
-# ---------------- CLASSIC BAR VISUALISER ----------------
+# ---------------- FILTER CHAIN ----------------
 
 def _build_filter_chain(video_ref: str) -> str:
-    """
-    Compact bar visualiser (200px × 24px),
-    aligned perfectly with Now Playing text on the right.
-    """
-
-    viz_w = 200     # width as requested
-    viz_h = 24      # EXACT same height as the Now Playing text (fontsize=24)
+    viz_w = 140
+    viz_h = 28
 
     np_file = str(NOWPLAYING_FILE)
 
-    # Match the vertical position of the Now Playing text
-    text_y = OUTPUT_H - viz_h - 10   # 10px margin above bottom
-    viz_y = text_y                   # align both exactly
+    text_y = OUTPUT_H - viz_h - 30
+    viz_y = text_y
+    viz_x = 40
 
-    viz_x = 40   # small left margin
+    # timestamp top-left aligned with logo vertical position
+    timestamp = (
+        f"drawtext=text='%{{localtime}}':"
+        f"x={LOGO_PADDING}:y={LOGO_PADDING}:"
+        "fontsize=24:fontcolor=white:borderw=2"
+    )
 
-    # Classic Lofi bar visualiser but compact
+    # audio visualiser
     viz = (
-        f"[1:a]showfreqs=mode=bar:"
-        f"ascale=log:colors=0xCCCCCC:"
+        f"[1:a]showfreqs=mode=bar:ascale=log:colors=0xCCCCCC:"
         f"size={viz_w}x{viz_h}[viz];"
     )
 
@@ -244,23 +253,22 @@ def _build_filter_chain(video_ref: str) -> str:
     if FFMPEG_LOGO.exists():
         return (
             viz +
-            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v0];"
-            f"[v0][2:v]overlay={logo_x}:{logo_y}[v1];"
-            f"[v1][viz]overlay={viz_x}:{viz_y}[v2];"
-            f"[v2]drawtext=textfile='{np_file}':reload=1:"
-            f"fontcolor=white:fontsize=24:"
-            f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
+            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[base];"
+            f"[base]{timestamp}[t1];"
+            f"[t1][2:v]overlay={logo_x}:{logo_y}[t2];"
+            f"[t2][viz]overlay={viz_x}:{viz_y}[t3];"
+            f"[t3]drawtext=textfile='{np_file}':reload=1:"
+            f"fontcolor=white:fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
         )
 
-    else:
-        return (
-            viz +
-            f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v0];"
-            f"[v0][viz]overlay={viz_x}:{viz_y}[v1];"
-            f"[v1]drawtext=textfile='{np_file}':reload=1:"
-            f"fontcolor=white:fontsize=24:"
-            f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
-        )
+    return (
+        viz +
+        f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[base];"
+        f"[base]{timestamp}[t1];"
+        f"[t1][viz]overlay={viz_x}:{viz_y}[t2];"
+        f"[t2]drawtext=textfile='{np_file}':reload=1:"
+        f"fontcolor=white:fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
+    )
 
 # ---------------- CAMERA ----------------
 
@@ -280,7 +288,20 @@ def start_camera():
     )
     picam.configure(config)
 
-    encoder = H264Encoder(bitrate=1800000)
+    # bitrate in bits per second; convert "1500k" -> 1500000
+    def _br_to_int(br: str) -> int:
+        if br.endswith("k"):
+            try:
+                return int(br[:-1]) * 1000
+            except:
+                return 1800000
+        try:
+            return int(br)
+        except:
+            return 1800000
+
+    cam_bitrate = _br_to_int(VIDEO_BITRATE)
+    encoder = H264Encoder(bitrate=cam_bitrate)
     out = FileOutput(str(CAM_FIFO))
 
     try:
@@ -289,16 +310,21 @@ def start_camera():
         print("❌ Failed to start camera:", e)
         return None
 
-    print(f"📸 Picamera2 (H264 Baseline {fps}fps) → {CAM_FIFO}")
+    print(f"📸 Picamera2 (H264 Baseline {fps}fps, ~{VIDEO_BITRATE}) → {CAM_FIFO}")
     return picam
 
 def stop_camera(picam):
-    if not picam: return
+    if not picam:
+        return
     print("📷 Stopping Picamera2…")
-    try: picam.stop_recording()
-    except: pass
-    try: picam.close()
-    except: pass
+    try:
+        picam.stop_recording()
+    except:
+        pass
+    try:
+        picam.close()
+    except:
+        pass
 
 # ---------------- AUDIO FEEDER ----------------
 
@@ -306,7 +332,8 @@ def audio_feeder(tracks, stop_event):
     print("🎚 Audio feeder started.")
     with open(AUDIO_FIFO, "wb", buffering=0) as fd:
         for t in _playlist_iterator(tracks):
-            if stop_event.is_set(): break
+            if stop_event.is_set():
+                break
 
             np = get_nowplaying(t)
             print(f"🎧 {np}")
@@ -324,8 +351,10 @@ def audio_feeder(tracks, stop_event):
                 time.sleep(0.5)
 
             if stop_event.is_set():
-                try: p.terminate()
-                except: pass
+                try:
+                    p.terminate()
+                except:
+                    pass
                 break
 
     print("🎚 Audio feeder stopped.")
@@ -340,16 +369,21 @@ def start_pipeline(stream_url: str):
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
 
-        # Timestamp stabilisation (YouTube safe)
-        "-fflags", "+genpts",
+        # Pi-safe low-latency-ish settings
+        "-fflags", "+genpts+discardcorrupt",
+        "-flags", "low_delay",
+
+        "-thread_queue_size", "4096",
+        "-probesize", "64k",
+        "-analyzeduration", "0",
+        "-vsync", "1",
         "-use_wallclock_as_timestamps", "1",
 
         # Video input
-        "-thread_queue_size", "512",
         "-f", "h264", "-i", str(CAM_FIFO),
 
         # Audio input
-        "-thread_queue_size", "512",
+        "-thread_queue_size", "4096",
         "-f", "s16le", "-ar", "44100", "-ac", "2", "-i", str(AUDIO_FIFO),
     ]
 
@@ -363,13 +397,13 @@ def start_pipeline(stream_url: str):
         "-map", "[vout]", "-map", "1:a",
 
         "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-tune", "zerolatency",
         "-profile:v", "baseline",
         "-level", "3.1",
-
-        "-preset", "ultrafast",
-        "-b:v", "1800k",
-        "-maxrate", "1800k",
-        "-bufsize", "2400k",
+        "-b:v", VIDEO_BITRATE,
+        "-maxrate", VIDEO_MAXRATE,
+        "-bufsize", VIDEO_BUFSIZE,
 
         "-g", str(g),
         "-keyint_min", str(g),
@@ -390,10 +424,37 @@ def start_pipeline(stream_url: str):
 
 def main():
     global CHOSEN_FPS, GOP_SIZE
+    global VIDEO_BITRATE, VIDEO_MAXRATE, VIDEO_BUFSIZE
 
-    print(f"🌙 LOFI STREAMER v{VERSION} — H264 Baseline + YouTube Fix\n")
+    print(f"🌙 LOFI STREAMER v{VERSION} — Pi4-Stability Edition\n")
 
-    wait_for_pi_ready()
+    print("⏳ Waiting for Pi to be fully ready...")
+    while os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") != 0:
+        print("⏳ Waiting for network…")
+        time.sleep(2)
+    print("🌐 Internet OK")
+
+    while True:
+        try:
+            socket.gethostbyname("google.com")
+            print("🔍 DNS OK")
+            break
+        except:
+            print("⏳ Waiting for DNS…")
+            time.sleep(1)
+
+    while True:
+        try:
+            yr = int(subprocess.check_output(["date", "+%Y"]))
+        except:
+            yr = 1970
+        if yr >= 2023:
+            print("⏱ Time synced")
+            break
+        print("⏳ Waiting for NTP…")
+        time.sleep(1)
+
+    print("✅ Pi Ready!\n")
 
     stream_url = load_stream_url()
     if not stream_url:
@@ -403,7 +464,8 @@ def main():
     if not tracks:
         return
 
-    CHOSEN_FPS = choose_fps()
+    # Pick FPS + bitrate based on Pi model & load
+    CHOSEN_FPS, VIDEO_BITRATE, VIDEO_MAXRATE, VIDEO_BUFSIZE = choose_stream_params()
     GOP_SIZE = CHOSEN_FPS * 4
     print(f"🎞 Final FPS: {CHOSEN_FPS}, GOP: {GOP_SIZE}")
 
@@ -411,7 +473,8 @@ def main():
         print("⚠️ RTMP host not reachable.")
 
     for f in (CAM_FIFO, AUDIO_FIFO):
-        if f.exists(): os.unlink(f)
+        if f.exists():
+            os.unlink(f)
         os.mkfifo(f)
         print(f"✓ FIFO ready: {f}")
 
@@ -447,13 +510,17 @@ def main():
 
     finally:
         stop_event.set()
-        try: ff.terminate()
-        except: pass
+        try:
+            ff.terminate()
+        except:
+            pass
 
         stop_camera(picam)
 
-        try: audio_thread.join(timeout=3)
-        except: pass
+        try:
+            audio_thread.join(timeout=3)
+        except:
+            pass
 
         print("👋 Streamer shut down.")
 
