@@ -23,7 +23,7 @@ from typing import List, Optional
 # ----------------------------
 #  1) Place your logo here:
 #       LofiStream/Logo/picam.png
-#       We used 300p x 67p png
+#       We used a 300p x 67p png on our channel. 
 #  2) Recommended size:
 #       WIDTH: 250px – 450px
 #       HEIGHT: 40px – 110px
