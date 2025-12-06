@@ -8,17 +8,33 @@ import subprocess
 from pathlib import Path
 from typing import List, Optional
 
-# -------------------------------------------------------
-#  LOFI STREAMER v8.7.9 — Dashboard Compatibility Edition
-# -------------------------------------------------------
-#  ✔ Pi4 tuned to 20fps, ~1500k video
-#  ✔ Pi5 tuned to 30fps, ~2500k video
-#  ✔ Timestamp + logo + 7-bar visualiser
-#  ✔ Pi-safe ffmpeg flags (no unsupported options)
-#  ✔ Writes BOTH:
-#       /tmp/nowplaying.txt     (ffmpeg overlay)
-#       /tmp/current_track.txt  (dashboard v3.5)
-# -------------------------------------------------------
+# ======================================================================
+#  LOFI STREAMER v8.7.9
+# ======================================================================
+#  ✔ Designed for Woobot Pi4/4GB & Pi5/8GB
+#  ✔ Picam branding top-right
+#  ✔ Dashboard compatibility (dual nowplaying files)
+#  ✔ 7-bar visualiser
+#  ✔ Timestamp
+#  ✔ Overshoot-safe H264 FIFO camera pipeline
+# ======================================================================
+#
+# HOW USERS CHANGE BRAND LOGO
+# ----------------------------
+#  1) Place your logo here:
+#       LofiStream/Logo/picam.png
+#
+#  2) Recommended size:
+#       WIDTH: 250px – 450px
+#       HEIGHT: 40px – 110px
+#       FORMAT: PNG (transparent preferred)
+#
+#  3) The streamer overlays logo automatically at:
+#       Top-Right Corner (40px padding)
+#
+#  No code modification needed.
+#
+# ======================================================================
 
 VERSION = "8.7.9"
 
