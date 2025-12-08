@@ -481,7 +481,6 @@ def start_pipeline(stream_url: str):
         "-g", str(g),
         "-keyint_min", str(g),
         "-sc_threshold", "0",
-
        "-pix_fmt", "yuv420p",
 
         "-c:a", "aac",
@@ -522,6 +521,8 @@ def main():
 
     if not SKIP_NETWORK_CHECK and not check_network():
         print("⚠️ RTMP host unreachable.")
+        write_nowplaying("RTMP host unreachable — check network")
+        return
 
     for f in (CAM_FIFO, AUDIO_FIFO):
         if f.exists(): os.unlink(f)
@@ -558,6 +559,9 @@ def main():
     except KeyboardInterrupt:
         print("👋 Stopping streamer...")
 
+    finally:
+        stop_event.set()
+        try: ff.terminate()
     finally:
         stop_event.set()
         try: ff.terminate()
