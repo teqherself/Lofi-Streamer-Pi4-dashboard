@@ -482,7 +482,7 @@ def start_pipeline(stream_url: str):
         "-keyint_min", str(g),
         "-sc_threshold", "0",
 
-        "-pix_fmt", "yuv420p",
+       "-pix_fmt", "yuv420p",
 
         "-c:a", "aac",
         "-b:a", "128k",
@@ -507,10 +507,12 @@ def main():
 
     stream_url = load_stream_url()
     if not stream_url:
+        write_nowplaying("RTMP URL missing")
         return
 
     tracks = load_tracks()
     if not tracks:
+        write_nowplaying("Playlist empty — add tracks to start streaming")
         return
 
     CHOSEN_FPS, VIDEO_BITRATE, VIDEO_MAXRATE, VIDEO_BUFSIZE = choose_stream_params()
@@ -533,6 +535,7 @@ def main():
     ff = start_pipeline(stream_url)
     picam = start_camera()
     if not picam:
+        write_nowplaying("Camera unavailable — check Picamera2")
         ff.terminate()
         return
 
