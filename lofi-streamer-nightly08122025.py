@@ -561,16 +561,17 @@ def main():
 
     finally:
         stop_event.set()
-        try: ff.terminate()
-    finally:
-        stop_event.set()
-        try: ff.terminate()
-        except: pass
+                try:
+            ff.terminate()
+        except:
+            pass
 
         stop_camera(picam)
 
-        try: audio_thread.join(timeout=3)
-        except: pass
+        try:
+            audio_thread.join(timeout=3)
+        except:
+            pass
 
         print("👋 Streamer shut down.")
 
