@@ -241,7 +241,25 @@ def _is_valid_audio(t: Path):
 
 
 def load_tracks() -> List[Path]:
-    tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
+    if not PLAYLIST_DIR.exists():
+        print(f"❌ Playlist directory missing: {PLAYLIST_DIR}")
+        try:
+            PLAYLIST_DIR.mkdir(parents=True, exist_ok=True)
+            print("📁 Created playlist directory. Add audio files to start streaming.")
+        except Exception as e:
+            print(f"❌ Failed to create playlist directory: {e}")
+            return []
+
+    if not PLAYLIST_DIR.is_dir():
+        print(f"❌ Playlist path is not a directory: {PLAYLIST_DIR}")
+        return []
+
+    try:
+        tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
+    except Exception as e:
+        print(f"❌ Failed to read playlist directory: {e}")
+        return []
+
     print(f"🎶 Loaded {len(tracks)} tracks.")
     return tracks
 
@@ -252,7 +270,6 @@ def _playlist_iterator(tracks):
         random.shuffle(lst)
         for t in lst:
             yield t
-
 
 # -------------------------------------------------------
 # NOW PLAYING (dual file writing)
