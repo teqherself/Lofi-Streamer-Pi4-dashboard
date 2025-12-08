@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 # ======================================================================
-#  LOFI STREAMER v8.7.9 — WOOBOT STABLE
+#  LOFI STREAMER v8.7.9 — updated STABLE
 # ======================================================================
 #  ✔ Designed for Woobot Pi4/4GB & Pi5/8GB
 #  ✔ Picam branding top-right
