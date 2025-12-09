@@ -7,20 +7,20 @@ import threading
 import subprocess
 from pathlib import Path
 from typing import List, Optional
+import signal
+import sys
 
 # ======================================================================
-#  LOFI STREAMER v8.7.9 — updated STABLE
+#  LOFI STREAMER v8.7.10 — STABILITY IMPROVEMENTS
 # ======================================================================
-#  ✔ Designed for Woobot Pi4/4GB & Pi5/8GB
-#  ✔ Picam branding top-right
-#  ✔ Dashboard compatibility (dual nowplaying files)
-#  ✔ 7-bar visualiser
-#  ✔ Timestamp
-#  ✔ Overshoot-safe H264 FIFO camera pipeline
-#  ✔ Dynamic playlist reload between cycles
+#  ✔ Auto-reconnect on stream failure
+#  ✔ Circular buffer for camera FIFO to prevent overflow
+#  ✔ Watchdog monitoring for FFmpeg health
+#  ✔ Graceful error recovery
+#  ✔ Process cleanup improvements
 # ======================================================================
 
-VERSION = "8.7.9-woobot-stable"
+VERSION = "8.7.10-woobot-stable"
 
 OUTPUT_W = 1280
 OUTPUT_H = 720
@@ -32,12 +32,16 @@ CAM_FIFO = Path("/tmp/camfifo.ts")
 AUDIO_FIFO = Path("/tmp/lofi_audio.pcm")
 
 NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
-CURRENT_TRACK_FILE = Path("/tmp/current_track.txt")   # Dashboard file
+CURRENT_TRACK_FILE = Path("/tmp/current_track.txt")
+
+# Watchdog settings
+WATCHDOG_INTERVAL = 30  # Check every 30 seconds
+MAX_RESTART_ATTEMPTS = 3
+RESTART_COOLDOWN = 60  # Wait 60s between restart attempts
 
 CHOSEN_FPS: Optional[int] = None
 GOP_SIZE: Optional[int] = None
 
-# These will be set depending on Pi model (4 or 5)
 VIDEO_BITRATE = "1800k"
 VIDEO_MAXRATE = "1800k"
 VIDEO_BUFSIZE = "2400k"
@@ -114,6 +118,9 @@ CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
 
 SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
 
+# Auto-restart configuration
+AUTO_RESTART = _env_bool("LOFI_AUTO_RESTART", True)
+
 
 # -------------------------------------------------------
 # NETWORK CHECK
@@ -132,13 +139,11 @@ def check_network() -> bool:
 def wait_for_pi_ready():
     print("⏳ Waiting for Pi to be fully ready...")
 
-    # Basic internet reachability
     while os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") != 0:
         print("⏳ Waiting for network…")
         time.sleep(2)
     print("🌐 Internet OK")
 
-    # DNS
     while True:
         try:
             socket.gethostbyname("google.com")
@@ -148,7 +153,6 @@ def wait_for_pi_ready():
             print("⏳ Waiting for DNS…")
             time.sleep(1)
 
-    # Time (NTP-ish)
     while True:
         try:
             yr = int(subprocess.check_output(["date", "+%Y"]))
@@ -182,7 +186,6 @@ def detect_pi_model():
 
 
 def choose_stream_params():
-    """Pick FPS + bitrate based on Pi model + startup load."""
     model = detect_pi_model()
 
     fps = FALLBACK_FPS
@@ -234,7 +237,6 @@ def _is_valid_audio(t: Path):
 
 
 def load_tracks() -> List[Path]:
-    """Ensure playlist dir exists and return list of valid audio files."""
     if not PLAYLIST_DIR.exists():
         print(f"❌ Playlist directory missing: {PLAYLIST_DIR}")
         try:
@@ -259,11 +261,6 @@ def load_tracks() -> List[Path]:
 
 
 def _playlist_iterator():
-    """
-    Dynamic playlist iterator:
-    - Reloads the playlist each full cycle
-    - Picks up new / removed tracks without restarting the streamer.
-    """
     while True:
         tracks = load_tracks()
         if not tracks:
@@ -278,7 +275,7 @@ def _playlist_iterator():
 
 
 # -------------------------------------------------------
-# NOW PLAYING (dual file writing)
+# NOW PLAYING
 # -------------------------------------------------------
 def _escape(s: str):
     return s.replace(":", r"\:")
@@ -300,19 +297,18 @@ def get_nowplaying(t: Path):
 
 
 def write_nowplaying(txt: str):
-    """Write now playing info to BOTH overlay + dashboard files."""
     try:
         NOWPLAYING_FILE.write_text(f"Now Playing: {txt}")
     except Exception:
         pass
     try:
-        CURRENT_TRACK_FILE.write_text(txt)  # Dashboard compatibility
+        CURRENT_TRACK_FILE.write_text(txt)
     except Exception:
         pass
 
 
 # -------------------------------------------------------
-# FILTER CHAIN (timestamp + logo + viz + nowplaying)
+# FILTER CHAIN
 # -------------------------------------------------------
 def _build_filter_chain(video_ref: str) -> str:
     viz_w = 140
@@ -349,7 +345,6 @@ def _build_filter_chain(video_ref: str) -> str:
             f"fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
         )
 
-    # No logo case
     return (
         viz +
         f"{video_ref}scale={OUTPUT_W}:{OUTPUT_H},format=yuv420p[v0];"
@@ -358,6 +353,44 @@ def _build_filter_chain(video_ref: str) -> str:
         f"[v2]drawtext=textfile='{np_file}':reload=1:fontcolor=white:"
         f"fontsize=24:x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
     )
+
+
+# -------------------------------------------------------
+# CIRCULAR FIFO OUTPUT (prevents camera overflow)
+# -------------------------------------------------------
+class CircularFifoOutput(FileOutput):
+    """
+    Wraps FileOutput to handle FIFO blocking gracefully.
+    If writes would block, drop frames instead of stalling the camera.
+    """
+    def __init__(self, file, buffer_size=1024*1024):
+        super().__init__(file)
+        self.buffer_size = buffer_size
+        self.dropped_frames = 0
+        self.non_blocking_set = False
+    
+    def outputframe(self, frame, keyframe=True, timestamp=None, packet=None, audio=None):
+        try:
+            # Set non-blocking on the FIFO (only once)
+            if not self.non_blocking_set and hasattr(self, 'file') and hasattr(self.file, 'fileno'):
+                try:
+                    fd = self.file.fileno()
+                    import fcntl
+                    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                    fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                    self.non_blocking_set = True
+                except Exception:
+                    pass
+            
+            # Call parent with all arguments
+            super().outputframe(frame, keyframe, timestamp, packet, audio)
+        except BlockingIOError:
+            # FFmpeg not reading fast enough - drop this frame
+            self.dropped_frames += 1
+            if self.dropped_frames % 100 == 0:
+                print(f"⚠️ Dropped {self.dropped_frames} camera frames (FIFO full)")
+        except Exception as e:
+            print(f"❌ Camera output error: {e}")
 
 
 # -------------------------------------------------------
@@ -379,14 +412,15 @@ def start_camera():
     )
     picam.configure(config)
 
-    # Convert "1500k" to integer bitrate
     def _br_to_int(br: str) -> int:
         if br.endswith("k"):
             return int(br[:-1]) * 1000
         return int(br)
 
     encoder = H264Encoder(bitrate=_br_to_int(VIDEO_BITRATE))
-    out = FileOutput(str(CAM_FIFO))
+    
+    # Use circular buffer output to prevent overflow
+    out = CircularFifoOutput(str(CAM_FIFO))
 
     try:
         picam.start_recording(encoder, out)
@@ -413,52 +447,73 @@ def stop_camera(picam):
 
 
 # -------------------------------------------------------
-# AUDIO FEEDER
+# AUDIO FEEDER (with better error handling)
 # -------------------------------------------------------
 def audio_feeder(_tracks_unused, stop_event):
     print("🎚 Audio feeder started.")
 
-    with open(AUDIO_FIFO, "wb", buffering=0) as fd:
-        for t in _playlist_iterator():
+    try:
+        with open(AUDIO_FIFO, "wb", buffering=0) as fd:
+            for t in _playlist_iterator():
 
-            if stop_event.is_set():
-                break
+                if stop_event.is_set():
+                    break
 
-            np = get_nowplaying(t)
-            print(f"🎧 {np}")
-            write_nowplaying(np)   # Dual-write
+                np = get_nowplaying(t)
+                print(f"🎧 {np}")
+                write_nowplaying(np)
 
-            cmd = [
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-re", "-vn", "-i", str(t),
-                "-f", "s16le", "-ar", "44100", "-ac", "2", "pipe:1"
-            ]
-            p = subprocess.Popen(cmd, stdout=fd)
-
-            while p.poll() is None and not stop_event.is_set():
-                time.sleep(0.5)
-
-            if stop_event.is_set():
+                cmd = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-re", "-vn", "-i", str(t),
+                    "-f", "s16le", "-ar", "44100", "-ac", "2", "pipe:1"
+                ]
+                
                 try:
-                    p.terminate()
-                except Exception:
-                    pass
-                break
+                    p = subprocess.Popen(cmd, stdout=fd, stderr=subprocess.PIPE)
+
+                    while p.poll() is None and not stop_event.is_set():
+                        time.sleep(0.5)
+
+                    if stop_event.is_set():
+                        try:
+                            p.terminate()
+                            p.wait(timeout=2)
+                        except Exception:
+                            p.kill()
+                        break
+                    
+                    # Check if ffmpeg failed
+                    if p.returncode != 0:
+                        stderr = p.stderr.read().decode() if p.stderr else ""
+                        print(f"⚠️ FFmpeg audio decode error for {t.name}: {stderr}")
+                        continue
+                        
+                except BrokenPipeError:
+                    print("⚠️ Audio FIFO broken pipe - FFmpeg may have stopped")
+                    break
+                except Exception as e:
+                    print(f"❌ Audio feeder error: {e}")
+                    if stop_event.is_set():
+                        break
+                    time.sleep(1)
+                    
+    except Exception as e:
+        print(f"❌ Audio feeder fatal error: {e}")
 
     print("🎚 Audio feeder stopped.")
 
 
 # -------------------------------------------------------
-# FFMPEG PIPELINE
+# FFMPEG PIPELINE (with stderr logging)
 # -------------------------------------------------------
 def start_pipeline(stream_url: str):
-
     print("🎥 Starting ffmpeg pipeline…")
 
     g = GOP_SIZE
 
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "ffmpeg", "-hide_banner", "-loglevel", "warning",  # Changed to warning for better debugging
         "-fflags", "+genpts+discardcorrupt",
         "-flags", "low_delay",
         "-thread_queue_size", "4096",
@@ -497,17 +552,193 @@ def start_pipeline(stream_url: str):
         "-f", "flv", stream_url
     ]
 
-    return subprocess.Popen(cmd)
+    return subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
 
 
 # -------------------------------------------------------
-# MAIN LOOP
+# WATCHDOG (monitors FFmpeg health)
 # -------------------------------------------------------
+def watchdog_monitor(ff_process, stop_event, restart_callback):
+    """
+    Monitor FFmpeg process and trigger restart if it becomes unhealthy.
+    """
+    print("🐕 Watchdog started")
+    
+    last_check_time = time.time()
+    
+    while not stop_event.is_set():
+        time.sleep(WATCHDOG_INTERVAL)
+        
+        if stop_event.is_set():
+            break
+            
+        # Check if FFmpeg is still running
+        if ff_process.poll() is not None:
+            print("❌ Watchdog: FFmpeg process died")
+            
+            # Read any error output
+            try:
+                stderr = ff_process.stderr.read().decode() if ff_process.stderr else ""
+                if stderr:
+                    print(f"FFmpeg stderr: {stderr[-500:]}")  # Last 500 chars
+            except Exception:
+                pass
+            
+            restart_callback()
+            break
+        
+        # Check CPU usage if psutil available
+        if PSUTIL_AVAILABLE:
+            try:
+                cpu = psutil.cpu_percent(interval=1)
+                if cpu > 95:
+                    print(f"⚠️ Watchdog: High CPU usage ({cpu:.1f}%)")
+            except Exception:
+                pass
+        
+        # Verify network connectivity periodically (every 5 minutes)
+        if time.time() - last_check_time > 300:
+            if not check_network():
+                print("⚠️ Watchdog: Network connectivity lost")
+            last_check_time = time.time()
+    
+    print("🐕 Watchdog stopped")
+
+
+# -------------------------------------------------------
+# MAIN LOOP with AUTO-RESTART
+# -------------------------------------------------------
+class StreamerState:
+    def __init__(self):
+        self.should_restart = False
+        self.restart_count = 0
+        self.last_restart_time = 0
+        self.stop_event = threading.Event()
+        self.global_stop = False
+
+
+def cleanup_resources(ff, picam, audio_thread, stop_event):
+    """Clean up all streaming resources"""
+    print("🧹 Cleaning up resources...")
+    
+    stop_event.set()
+    
+    # Stop FFmpeg
+    if ff and ff.poll() is None:
+        try:
+            ff.terminate()
+            ff.wait(timeout=5)
+        except Exception:
+            try:
+                ff.kill()
+            except Exception:
+                pass
+    
+    # Stop camera
+    stop_camera(picam)
+    
+    # Wait for audio thread
+    if audio_thread and audio_thread.is_alive():
+        try:
+            audio_thread.join(timeout=3)
+        except Exception:
+            pass
+
+
+def run_streaming_session(state: StreamerState, stream_url: str):
+    """Run one streaming session"""
+    
+    # Reset stop event for this session
+    state.stop_event.clear()
+    
+    # Create FIFOs
+    for f in (CAM_FIFO, AUDIO_FIFO):
+        if f.exists():
+            try:
+                os.unlink(f)
+            except Exception:
+                pass
+        try:
+            os.mkfifo(f)
+            print(f"✓ FIFO ready: {f}")
+        except Exception as e:
+            print(f"❌ Failed to create FIFO {f}: {e}")
+            return False
+
+    write_nowplaying("Initialising…")
+
+    # Start pipeline
+    ff = start_pipeline(stream_url)
+    if not ff:
+        print("❌ Failed to start FFmpeg")
+        return False
+    
+    # Start camera
+    picam = start_camera()
+    if not picam:
+        print("❌ Failed to start camera")
+        try:
+            ff.terminate()
+        except Exception:
+            pass
+        return False
+
+    # Start audio
+    tracks = load_tracks()
+    audio_thread = threading.Thread(
+        target=audio_feeder, args=(tracks, state.stop_event), daemon=True
+    )
+    audio_thread.start()
+
+    # Start watchdog
+    def restart_trigger():
+        state.should_restart = True
+        state.stop_event.set()
+    
+    watchdog_thread = threading.Thread(
+        target=watchdog_monitor, 
+        args=(ff, state.stop_event, restart_trigger),
+        daemon=True
+    )
+    watchdog_thread.start()
+
+    # Main monitoring loop
+    try:
+        while not state.stop_event.is_set() and not state.global_stop:
+            if ff.poll() is not None:
+                print("❌ FFmpeg exited")
+                state.should_restart = True
+                break
+
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        print("👋 Stopping streamer...")
+        state.global_stop = True
+
+    finally:
+        cleanup_resources(ff, picam, audio_thread, state.stop_event)
+
+    return True
+
+
 def main():
     global CHOSEN_FPS, GOP_SIZE
     global VIDEO_BITRATE, VIDEO_MAXRATE, VIDEO_BUFSIZE
 
     print(f"🌙 LOFI STREAMER v{VERSION} — Woobot Stable\n")
+
+    # Handle Ctrl+C gracefully
+    state = StreamerState()
+    
+    def signal_handler(sig, frame):
+        print("\n👋 Received shutdown signal")
+        state.global_stop = True
+        state.stop_event.set()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     wait_for_pi_ready()
 
@@ -523,60 +754,59 @@ def main():
     GOP_SIZE = CHOSEN_FPS * 4
 
     print(f"🎞 Final FPS: {CHOSEN_FPS}, GOP: {GOP_SIZE}")
+    print(f"🔄 Auto-restart: {'Enabled' if AUTO_RESTART else 'Disabled'}\n")
 
     if not SKIP_NETWORK_CHECK and not check_network():
         print("⚠️ RTMP host unreachable.")
 
-    for f in (CAM_FIFO, AUDIO_FIFO):
-        if f.exists():
-            os.unlink(f)
-        os.mkfifo(f)
-        print(f"✓ FIFO ready: {f}")
-
-    write_nowplaying("Initialising…")
-
-    stop_event = threading.Event()
-
-    ff = start_pipeline(stream_url)
-    picam = start_camera()
-    if not picam:
-        ff.terminate()
-        return
-
-    audio_thread = threading.Thread(
-        target=audio_feeder, args=(tracks, stop_event), daemon=True
-    )
-    audio_thread.start()
-
-    try:
-        while True:
-            if ff.poll() is not None:
-                print("❌ ffmpeg exited.")
+    # Main restart loop
+    while not state.global_stop:
+        print("🚀 Starting streaming session...")
+        
+        success = run_streaming_session(state, stream_url)
+        
+        if state.global_stop:
+            break
+        
+        if not AUTO_RESTART or not state.should_restart:
+            print("❌ Streaming stopped and auto-restart disabled")
+            break
+        
+        # Check restart limits
+        current_time = time.time()
+        if current_time - state.last_restart_time < RESTART_COOLDOWN:
+            state.restart_count += 1
+        else:
+            state.restart_count = 1
+        
+        state.last_restart_time = current_time
+        
+        if state.restart_count > MAX_RESTART_ATTEMPTS:
+            print(f"❌ Max restart attempts ({MAX_RESTART_ATTEMPTS}) reached. Giving up.")
+            break
+        
+        print(f"🔄 Restarting stream (attempt {state.restart_count}/{MAX_RESTART_ATTEMPTS})...")
+        print(f"⏳ Waiting {RESTART_COOLDOWN}s before restart...")
+        
+        # Wait for cooldown period (can be interrupted)
+        for _ in range(RESTART_COOLDOWN):
+            if state.global_stop:
                 break
+            time.sleep(1)
+        
+        if state.global_stop:
+            break
+        
+        # Reset restart flag
+        state.should_restart = False
+        
+        # Check network before restart
+        if not check_network():
+            print("⚠️ Waiting for network connectivity...")
+            while not check_network() and not state.global_stop:
+                time.sleep(5)
 
-            if PSUTIL_AVAILABLE:
-                print(f"🧠 CPU {psutil.cpu_percent():.1f}%")
-
-            time.sleep(0.5)
-
-    except KeyboardInterrupt:
-        print("👋 Stopping streamer...")
-
-    finally:
-        stop_event.set()
-        try:
-            ff.terminate()
-        except Exception:
-            pass
-
-        stop_camera(picam)
-
-        try:
-            audio_thread.join(timeout=3)
-        except Exception:
-            pass
-
-        print("👋 Streamer shut down.")
+    print("👋 Streamer shut down completely.")
 
 
 if __name__ == "__main__":
