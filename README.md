@@ -11,6 +11,8 @@ The **Dashboard** is an optional add-on that provides full web-based control, mo
 
 This repo contains **the Dashboard Add-On**.
 
+THIS PROJECT IS WORK IN PROGRESS
+
 ---
 
 # 🌟 Features
